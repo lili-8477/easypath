@@ -1,0 +1,26 @@
+# data and outputs: never commit slides, results, review databases or tokens
+data/
+results/
+logs/
+*.sqlite
+*.sqlite-journal
+*.db
+*.svs
+*.ndpi
+*.tif
+*.tiff
+*.mrxs
+*.npz
+*.npy
+*.pt
+*.h5
+*.h5ad
+*.csv
+*.xlsx
+.env
+.hss_annot_token
+*.token
+__pycache__/
+*.pyc
+.DS_Store
+._*

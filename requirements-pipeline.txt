@@ -1,0 +1,12 @@
+# feature extraction and segmentation (GPU for s1 / a2 / c0)
+-r requirements-app.txt
+torch==2.4.1
+timm==1.0.30
+huggingface_hub
+scikit-learn==1.9.1
+scikit-image==0.26.0
+shapely==2.2.0
+h5py==3.16.0
+tifffile
+matplotlib==3.11.2
+# CONCH: pip install git+https://github.com/mahmoodlab/CONCH.git

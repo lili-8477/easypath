@@ -1,0 +1,10 @@
+# review app (CPU only)
+fastapi==0.115.14
+uvicorn==0.34.3
+pydantic==2.14.1
+numpy==2.4.6
+pandas==2.3.3
+pillow==13.0.0
+scipy==1.17.1
+openslide-python>=1.4
+openslide-bin>=4.0

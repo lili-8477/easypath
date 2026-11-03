@@ -1,0 +1,9 @@
+services:
+  easypath:
+    build: .
+    ports: ["8765:8765"]
+    env_file: .env
+    volumes:
+      - ${EASYPATH_DATA:-./data}/results:/data/results      # slide_manifest.csv, annot/ (read + annotations.sqlite write)
+      - ${EASYPATH_DATA:-./data}/slides:/data/slides:ro     # whole-slide images
+    restart: unless-stopped

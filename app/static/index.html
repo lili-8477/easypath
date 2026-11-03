@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>hSS Review</title>
+<link rel="stylesheet" href="static/style.css">
+<script src="static/vendor/openseadragon.min.js"></script>
+</head>
+<body>
+<header id="top">
+  <div class="brand">hSS&nbsp;review</div>
+  <nav class="tabs" aria-label="Review mode">
+    <button data-mode="clusters" title="Label unsupervised token clusters">1 · Clusters</button>
+    <button data-mode="rois" title="Slide viewer, segment labels and subtype">2 · Slides</button>
+  </nav>
+  <select id="segRun" class="run-select" aria-label="Segmentation run" title="Segmentation run being reviewed (switches the app for everyone)"></select>
+  <div id="slideTitle" class="slide-title">Select a slide</div>
+  <div class="spacer"></div>
+  <div id="progress" class="progress" title="Slides with a saved subtype"></div>
+  <label class="reviewer">Reviewer <input id="reviewer" placeholder="initials" maxlength="24" autocomplete="off"></label>
+  <div class="menu">
+    <button id="exportBtn" class="ghost">Export</button>
+    <div id="exportMenu" class="menu-pop hidden">
+      <a href="api/export/slide_reviews.csv" download>Slide reviews audit (CSV)</a>
+      <a id="exportSlide" href="#" download>This slide, labelled segments (GeoJSON, QuPath)</a>
+      <a href="api/export/cluster_labels.csv" download>Cluster labels audit (CSV)</a>
+    </div>
+  </div>
+  <button id="helpBtn" class="ghost" title="Keyboard shortcuts (?)">?</button>
+</header>
+
+<main id="clusterMain" class="cmain hidden">
+  <aside id="cLeft">
+    <div class="panel-head"><span id="cTitle">Token clusters</span><span id="cProgress" class="muted small"></span></div>
+    <div id="cMeta" class="muted small cmeta"></div>
+    <ul id="cList" class="slide-list"></ul>
+    <div id="cMergeBar" class="mergebar foot"></div>
+  </aside>
+  <section id="cCenter">
+    <div id="cHead" class="chead"></div>
+    <div id="cGallery" class="gallery"></div>
+    <div class="gal-foot"><button id="cMore">Show 24 more examples <kbd>M</kbd></button></div>
+  </section>
+  <aside id="cRight"><div id="cPanel" class="cpanel"></div></aside>
+</main>
+
+<main id="roiMain">
+  <aside id="left">
+    <div class="panel-head">
+      <span>Slides</span>
+      <select id="slideFilter" aria-label="Filter slides">
+        <option value="all">All</option>
+        <option value="todo">Not reviewed</option>
+        <option value="done">Reviewed</option>
+        <option value="qc">QC flagged</option>
+      </select>
+    </div>
+    <input id="slideSearch" class="search" placeholder="Filter by case or patient" autocomplete="off">
+    <ul id="slideList" class="slide-list"></ul>
+  </aside>
+
+  <section id="center">
+    <div id="viewerWrap">
+      <div id="viewer"></div>
+      <div id="tools" class="tools">
+        <label>Overlay
+          <select id="heatSel">
+            <optgroup label="Segmentation" data-g="clusters">
+              <option value="all@clusters">Segments, colour per class</option>
+              <option value="slide@clusters">Labels on this slide</option>
+              <option value="pred@clusters">Model-predicted labels</option>
+            </optgroup>
+            <option value="none">Off</option>
+          </select>
+        </label>
+        <input id="heatOpacity" type="range" min="0" max="1" step="0.05" value="0.45" aria-label="Overlay opacity">
+        <button id="fitBtn" class="tool" title="Whole slide (F)">Fit</button>
+      </div>
+      <div id="legend" class="legend"></div>
+    </div>
+  </section>
+
+  <aside id="right">
+    <div id="srPanel" class="spanel empty">Select a slide.</div>
+  </aside>
+</main>
+
+<div id="help" class="modal hidden" role="dialog" aria-label="Keyboard shortcuts">
+  <div class="modal-card">
+    <h2>Keyboard shortcuts</h2>
+    <h3 class="kh">Clusters</h3>
+    <div class="keys">
+      <div><kbd>1</kbd>…<kbd>0</kbd><kbd>-</kbd><kbd>=</kbd><kbd>[</kbd><kbd>]</kbd> Label (keys shown on buttons)</div>
+      <div><kbd>U</kbd> Purity</div>
+      <div><kbd>B</kbd> Batch-driven flag</div>
+      <div><kbd>Enter</kbd> Save, next unlabelled</div>
+      <div><kbd>↑</kbd> <kbd>↓</kbd> Previous / next cluster</div>
+      <div><kbd>M</kbd> More random tokens</div>
+    </div>
+    <h3 class="kh">Slides</h3>
+    <div class="keys">
+      <div><kbd>M</kbd> Monophasic &nbsp; <kbd>B</kbd> Biphasic</div>
+      <div><kbd>P</kbd> Poorly differentiated</div>
+      <div><kbd>N</kbd> Not SS &nbsp; <kbd>Q</kbd> Cannot assess</div>
+      <div><kbd>G</kbd> <kbd>C</kbd> Glandular / corded pattern</div>
+      <div><kbd>1</kbd>…<kbd>9</kbd> Show only that segment</div>
+      <div><kbd>Enter</kbd> Save, next unreviewed slide</div>
+      <div><kbd>↓</kbd> <kbd>↑</kbd> Next / previous slide</div>
+      <div><kbd>H</kbd> Cycle overlay &nbsp; <kbd>F</kbd> Whole slide</div>
+    </div>
+    <p class="muted">Every save is stored with reviewer, time and the model prediction. A later save on the same slide supersedes the earlier one; nothing is overwritten.</p>
+    <button id="helpClose">Close</button>
+  </div>
+</div>
+<div id="toast" class="toast hidden"></div>
+<script src="static/app.js"></script>
+<script src="static/clusters.js"></script>
+</body>
+</html>
