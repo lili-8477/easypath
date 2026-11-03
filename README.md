@@ -78,3 +78,7 @@ sbatch deploy/chpc/serve.slurm
 
 UNI2-h, H-optimus and Virchow2 weights are gated on Hugging Face; log in with an account that has access.
 See `docs/pipeline.md` for every step and setting.
+
+## License
+
+MIT, see `LICENSE`. `app/static/vendor/openseadragon.min.js` is OpenSeadragon (BSD 3-Clause). Model weights (CONCH, UNI, H-optimus, Virchow2) are not included and keep their own licenses.
