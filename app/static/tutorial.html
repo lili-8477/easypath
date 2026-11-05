@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>hSS Review Tutorial</title>
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=4">
 <link rel="stylesheet" href="tutorial.css">
 </head>
 <body class="tut">
@@ -25,6 +25,10 @@
     <a href="#erase" class="sub">Remove an area</a>
     <a href="#merge" class="sub">Merge segments</a>
     <a href="#undo" class="sub">Undo</a>
+    <a href="#rois">Pick ROIs</a>
+    <a href="#rois-all" class="sub">See your ROIs</a>
+    <a href="#rois-change" class="sub">Change or delete a ROI</a>
+    <a href="#layout">Arrange the panels</a>
     <a href="#saved">What is saved when</a>
     <a href="#tags">Label tags</a>
     <a href="#export">Export</a>
@@ -35,18 +39,21 @@
   <main class="tut-main">
     <h1>Reviewing a slide</h1>
     <p class="lede">The model divides each slide into segments and suggests a tissue label for each one, plus a subtype for the slide. You check those suggestions, correct what is wrong and save.</p>
+    <p>To mark your own regions instead, see <a href="#rois">Pick ROIs</a>. The tabs at the top switch between the two.</p>
     <p class="muted">The screenshots use an artificial test slide, so the tissue looks nothing like H&amp;E.</p>
 
     <h2 id="screen">The screen</h2>
     <figure class="callouts">
       <img src="tutorial/overview.webp" width="1520" height="950" alt="The review app with the slide list on the left, the slide and its coloured segments in the middle, and the subtype and segment list on the right.">
-      <span class="pin" style="left:6.3%;top:7.6%" aria-hidden="true">1</span>
-      <span class="pin" style="left:83.9%;top:2.5%" aria-hidden="true">2</span>
-      <span class="pin" style="left:56.5%;top:8.5%" aria-hidden="true">3</span>
-      <span class="pin" style="left:23.5%;top:17.5%" aria-hidden="true">4</span>
-      <span class="pin" style="left:97.6%;top:6.9%" aria-hidden="true">5</span>
-      <span class="pin" style="left:75.9%;top:34.9%" aria-hidden="true">6</span>
-      <span class="pin" style="left:75.7%;top:91.7%" aria-hidden="true">7</span>
+      <span class="pin" style="left:5.0%;top:7.3%" aria-hidden="true">1</span>
+      <span class="pin" style="left:78.9%;top:2.4%" aria-hidden="true">2</span>
+      <span class="pin" style="left:53.6%;top:9.4%" aria-hidden="true">3</span>
+      <span class="pin" style="left:24.4%;top:16.9%" aria-hidden="true">4</span>
+      <span class="pin" style="left:98.2%;top:11.3%" aria-hidden="true">5</span>
+      <span class="pin" style="left:74.7%;top:39.4%" aria-hidden="true">6</span>
+      <span class="pin" style="left:88.6%;top:6.5%" aria-hidden="true">8</span>
+      <span class="pin" style="left:75.6%;top:96.3%" aria-hidden="true">7</span>
+      <span class="pin" style="left:23.5%;top:2.9%" aria-hidden="true">9</span>
     </figure>
     <ol class="legend-list">
       <li><b>Slides.</b> Filter by status, or search by case or patient.</li>
@@ -56,13 +63,15 @@
       <li><b>Subtype.</b> The model's suggestion and your call for the slide.</li>
       <li><b>Segments.</b> Each segment's size, model label, your label and comments, largest first.</li>
       <li><b>Save slide.</b> Records your subtype and the labels you checked.</li>
+      <li><b>Layout.</b> Shows or hides any panel and resets the arrangement. See <a href="#layout">Arrange the panels</a>.</li>
+      <li><b>Tabs.</b> <b>Segments</b> is the review described here. <b>Pick ROIs</b> and <b>My ROIs</b> are for <a href="#rois">your own regions</a>.</li>
     </ol>
 
     <h2 id="review">Review a slide</h2>
     <ol class="steps">
       <li>
         <h3>Enter your initials</h3>
-        <p>Every save, edit and comment is recorded under them. The app asks for them if the box is empty.</p>
+        <p>Every save, edit and comment is recorded under them. Type them in the box at the top and press <kbd>Enter</kbd>. Shortcuts are letters, so until you leave the box they would become part of your initials. The box also lets go by itself after two seconds, and the message after each save shows the name it was saved under.</p>
       </li>
       <li>
         <h3>Open a slide</h3>
@@ -86,7 +95,7 @@
         <h3>Comment where it helps</h3>
         <p>Press <kbd>T</kbd> or the segment's <b>Comment</b> button, type, then click <b>Add comment</b>. Press <kbd>Esc</kbd> to leave the box, because shortcuts don't work while you are typing.</p>
         <figure>
-          <img src="tutorial/comment.webp" class="narrow" width="638" height="488" loading="lazy" alt="A selected segment in the list, marked as checked, with its comment thread open and a box for adding another comment.">
+          <img src="tutorial/comment.webp" class="narrow" width="640" height="488" loading="lazy" alt="A selected segment in the list, marked as checked, with its comment thread open and a box for adding another comment.">
         </figure>
       </li>
       <li>
@@ -166,6 +175,70 @@
     <p><kbd>Z</kbd> undoes the last edit and <kbd>Shift</kbd>+<kbd>Z</kbd> redoes it. <b>Segmentation edits in force</b>, at the bottom of the right panel, lists what currently applies.</p>
     <p>Undo works per slide, not per person, so it can undo a colleague's last edit on that slide. It doesn't reverse merges.</p>
 
+    <h2 id="rois">Pick ROIs</h2>
+    <p>Use the <b>Pick ROIs</b> tab to mark areas of a slide and say what they show. A ROI belongs to the slide, not to the model's segmentation, so the slide is shown plain and the run menu is put away. The Overlay panel can still bring the colours back.</p>
+    <p><b>You work in your own workspace.</b> Your initials open it, and you see only the ROIs picked under them, so each expert annotates independently. Use the same initials each time; capitals don't matter.</p>
+    <figure>
+      <img src="tutorial/roi-options.webp" width="1275" height="797" loading="lazy" alt="The Pick ROIs tab. A new square is drawn on the slide, and the review panel lists the options, with Glandular and Myxoid chosen, a comment box and a Save ROI button. Two earlier ROIs are listed below.">
+    </figure>
+    <ol class="steps">
+      <li>
+        <h3>Find the area</h3>
+        <p>Enter your initials and choose a slide on the left. Scroll to zoom and drag to pan. The slide list shows how many ROIs you have on each slide, and its filter can show only the slides where you have none yet.</p>
+      </li>
+      <li>
+        <h3>Draw around it</h3>
+        <table>
+          <thead><tr><th>Tool</th><th>How to draw</th></tr></thead>
+          <tbody>
+            <tr><td><b>Polygon</b> <kbd>D</kbd></td><td>Click around the area, one point at a time. To close it, double-click, press <kbd>Enter</kbd> or click the first point. <kbd>Backspace</kbd> removes the last point.</td></tr>
+            <tr><td><b>Square</b> <kbd>S</kbd></td><td>Drag from corner to corner. Hold <kbd>Shift</kbd> for a rectangle.</td></tr>
+            <tr><td><b>Oval</b> <kbd>O</kbd></td><td>Drag across the area. Hold <kbd>Shift</kbd> for a circle.</td></tr>
+          </tbody>
+        </table>
+        <p>Scroll still zooms while you draw, and holding <kbd>Space</kbd> lets you drag to pan, so a polygon can follow a long border. <kbd>Esc</kbd> cancels.</p>
+      </li>
+      <li>
+        <h3>Say what it shows</h3>
+        <p>The options appear in the review panel. Click one or press its number. Choose several if the area shows more than one, and choose one again to remove it.</p>
+      </li>
+      <li>
+        <h3>Save</h3>
+        <p>Add a comment if it helps, then press <b>Save ROI</b> or <kbd>Enter</kbd>. The slide goes back to Move, so your next drag pans. To cancel a new ROI, press <kbd>Esc</kbd> or <b>Discard</b>.</p>
+      </li>
+    </ol>
+    <aside class="tut-note"><b>Moved on without saving?</b> If you go to another slide or tab, a ROI with a label is saved for you. One without a label can't be kept, and neither can a polygon you haven't closed. A message tells you when that happens.</aside>
+
+    <h3 id="rois-all">See your ROIs</h3>
+    <figure>
+      <img src="tutorial/roi-gallery.webp" width="1275" height="797" loading="lazy" alt="The My ROIs tab. Each slide has a row of cards showing the picked area, its labels, comment, size and date. Buttons above filter by label, and there are Export buttons at the top right.">
+    </figure>
+    <p>The <b>My ROIs</b> tab shows your ROIs on every slide, grouped by slide. Use the buttons at the top to show one label. Click a card to open that ROI on its slide, or click a slide on the left to work on it.</p>
+    <p>On the Pick ROIs tab, the same ROIs appear on the slide and in the list in the review panel.</p>
+
+    <h3 id="rois-change">Change or delete a ROI</h3>
+    <p>Click a ROI on the slide or in the list. Change its labels or comment and press <b>Save changes</b>. <b>Close</b> leaves it as it was.</p>
+    <p><b>Delete</b> removes it, and an <b>Undo</b> button stays in the panel until you move on. To change an outline, delete the ROI and draw it again.</p>
+
+    <h2 id="layout">Arrange the panels</h2>
+    <figure>
+      <img src="tutorial/layout.webp" width="1275" height="797" loading="lazy" alt="The app with the slide list folded to a narrow rail on the left and the Layout menu open, listing each panel with a tick and a Reset layout item.">
+    </figure>
+    <table>
+      <thead><tr><th>To do this</th><th>Do this</th></tr></thead>
+      <tbody>
+        <tr><td>Resize the slide list or review panel</td><td>Drag the line between it and the slide. Double-click the line to reset the width.</td></tr>
+        <tr><td>Fold the slide list or review panel</td><td>Click <b>‹</b> or <b>›</b> at the top of the panel, or press <kbd>,</kbd> for slides and <kbd>.</kbd> for review. Click the narrow rail left behind to bring it back.</td></tr>
+        <tr><td>Move a panel on the slide</td><td>Drag its title bar. Double-click the title bar to put it back.</td></tr>
+        <tr><td>Fold a panel on the slide</td><td>Click <b>▾</b> in its title bar. Shortcuts for a folded panel keep working.</td></tr>
+        <tr><td>Resize the minimap</td><td>Drag its bottom right corner.</td></tr>
+        <tr><td>Fold a section of the review panel</td><td>Click its heading. A folded section still shows your subtype or the number of segments checked.</td></tr>
+        <tr><td>Start again</td><td>Choose <b>Layout</b> at the top, then <b>Reset layout</b>.</td></tr>
+      </tbody>
+    </table>
+    <p>Your arrangement is remembered in this browser only. In a narrow window, or with the browser zoomed far in, only the panel you opened last stays open and the other folds to its rail. You can still switch between them.</p>
+    <aside class="tut-note"><b>Is a panel missing or stuck on “Loading…”?</b> Reload the page. If that doesn't help, press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>R</kbd> (<kbd>Cmd</kbd>+<kbd>Shift</kbd>+<kbd>R</kbd> on a Mac), then try <b>Layout</b> and <b>Reset layout</b>.</aside>
+
     <h2 id="saved">What is saved when</h2>
     <table>
       <thead><tr><th>Saved at once</th><th>Saved by Save slide</th></tr></thead>
@@ -176,6 +249,7 @@
       </tbody>
     </table>
     <p>Nothing is overwritten. Every action is logged with reviewer and time, a later save replaces an earlier one as the current answer, and the model's original segmentation is kept.</p>
+    <p>ROIs have their own <b>Save ROI</b> button, and the same rule applies: each change is a new record, and a deleted ROI is only marked as deleted.</p>
 
     <h2 id="tags">Label tags</h2>
     <p>The tag at the right of each segment row shows where its label stands.</p>
@@ -196,6 +270,10 @@
       <li><b>Slide reviews audit (CSV):</b> every save, edit and comment.</li>
       <li><b>This slide, labelled segments (GeoJSON):</b> the current outlines with their labels, ready for QuPath.</li>
       <li><b>Cluster labels audit (CSV):</b> class labels saved in earlier versions of the app.</li>
+      <li><b>My ROIs and annotations (CSV):</b> one row per ROI, with its labels, comment, size and outline.</li>
+      <li><b>My ROIs (GeoJSON):</b> the same ROIs, ready for QuPath.</li>
+      <li><b>Every reviewer's ROIs, to compare (CSV):</b> for whoever analyses agreement between experts. Opening it shows you other people's annotations, so leave it until your own are finished.</li>
+      <li><b>ROI audit trail (CSV):</b> every change to every ROI, from every reviewer.</li>
     </ul>
 
     <h2 id="limits">Good to know</h2>
@@ -203,7 +281,8 @@
       <li><b>Model labels on drawn shapes are rough.</b> They come from scores on 512 px patches, so check small shapes by eye.</li>
       <li><b>Lines edits outer outlines only.</b> To change a hole inside a segment, use Brush or Erase. Very small pieces have no outline, so they can't be clicked; Brush and Erase still work on them.</li>
       <li><b>Very complex outlines can take a second or so to apply.</b> The hint shows “Saving…” until they finish.</li>
-      <li><b>The run menu at the top left affects everyone.</b> Switching it changes the run for all open sessions, and labels are stored per run, so check with colleagues first.</li>
+      <li><b>The run menu at the top left affects everyone.</b> Switching it changes the run for all open sessions, and stays that way until someone switches again. Labels are stored per run, so check with colleagues first.</li>
+      <li><b>A workspace is tied to initials, not a password.</b> Two people using the same initials share a workspace, and anyone who types your initials opens yours. Agree on initials with your colleagues.</li>
     </ul>
 
     <h2 id="keys">Keyboard shortcuts</h2>
@@ -238,6 +317,19 @@
           <tr><td><kbd>Shift</kbd>+<kbd>Z</kbd></td><td>Redo</td></tr>
           <tr><td><kbd>Space</kbd> + drag</td><td>Pan while drawing</td></tr>
           <tr><td><kbd>Esc</kbd></td><td>Cancel, then back to Move</td></tr>
+          <tr><td><kbd>,</kbd> <kbd>.</kbd></td><td>Fold the slide list / review panel</td></tr>
+        </tbody>
+      </table>
+      <table>
+        <thead><tr><th colspan="2">Pick ROIs tab</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>D</kbd> <kbd>S</kbd> <kbd>O</kbd></td><td>Polygon / Square / Oval</td></tr>
+          <tr><td><kbd>V</kbd></td><td>Move</td></tr>
+          <tr><td><kbd>Backspace</kbd></td><td>Remove the last polygon point</td></tr>
+          <tr><td><kbd>1</kbd>…<kbd>9</kbd> <kbd>0</kbd></td><td>Choose a label, in the order listed</td></tr>
+          <tr><td><kbd>Enter</kbd></td><td>Close the polygon, or save the ROI</td></tr>
+          <tr><td><kbd>Esc</kbd></td><td>Cancel, one step back</td></tr>
+          <tr><td><kbd>↓</kbd> <kbd>↑</kbd> <kbd>F</kbd> <kbd>H</kbd></td><td>Next / previous slide, whole slide, overlay</td></tr>
         </tbody>
       </table>
     </div>

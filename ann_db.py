@@ -43,6 +43,15 @@ CREATE INDEX IF NOT EXISTS seg_edits_slide ON seg_edits(clustering, slide_id);
 CREATE TABLE IF NOT EXISTS segment_comments (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   clustering TEXT, slide_id TEXT, segment INT, reviewer TEXT, ts TEXT, comment TEXT);
+CREATE TABLE IF NOT EXISTS expert_roi_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  roi_id TEXT, slide_id TEXT, reviewer TEXT, ts TEXT,
+  action TEXT,              -- create | annotate | delete | restore; the latest row of a ROI is its current state
+  shape TEXT,               -- polygon | square | oval (create only)
+  ring TEXT,                -- JSON outline, level-0 slide pixels (create only: an outline never changes)
+  labels TEXT,              -- JSON list of label keys, the full set after this event
+  comment TEXT);
+CREATE INDEX IF NOT EXISTS expert_roi_events_roi ON expert_roi_events(roi_id);
 """
 LATEST = """SELECT r.* FROM reviews r JOIN (SELECT roi_id, MAX(id) AS mid FROM reviews GROUP BY roi_id) l
             ON r.id = l.mid"""

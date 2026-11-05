@@ -30,8 +30,17 @@ def runs():
     return {p.parent.name: json.load(open(p)) for p in ps}
 
 
-# the active segmentation run (SEG_DIR, else the newest) is reviewed; without one, the token clusters (c1)
-_active = {"dir": os.environ.get("SEG_DIR") or next(iter(runs()), None)}
+ACTIVE_RUN_FILE = ANN / "active_run.txt"   # the run last chosen in the app, so a restart does not change it
+
+
+def _startup_run():
+    found = runs()
+    saved = ACTIVE_RUN_FILE.read_text().strip() if ACTIVE_RUN_FILE.exists() else None
+    return os.environ.get("SEG_DIR") or (saved if saved in found else next(iter(found), None))
+
+
+# the active segmentation run (SEG_DIR, else the last chosen, else the newest) is reviewed; without one, the token clusters (c1)
+_active = {"dir": _startup_run()}
 SEG_MODE = _active["dir"] is not None
 
 
@@ -127,6 +136,7 @@ def set_clustering(body: RunChoice):
     if body.dir not in runs():
         raise HTTPException(404, "no such run")
     _active["dir"] = body.dir
+    ACTIVE_RUN_FILE.write_text(body.dir + "\n")
     return {"ok": True}
 
 

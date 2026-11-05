@@ -34,6 +34,7 @@ from ann_common import (ANN, MAP_DIR, NECROSIS_LABELS, PATTERN_LABELS, RES, THUM
                         TUMOR_LABELS, latest_rois, slide_path)
 from ann_db import connect, latest_reviews, manual_rois  # noqa: E402
 from clusters import derived_subtypes, router as cluster_router, seg_meta  # noqa: E402
+from expertroi import build_router as expert_roi_router  # noqa: E402
 from slidereview import router as slide_router  # noqa: E402
 
 STATIC = Path(__file__).parent / "static"
@@ -62,6 +63,8 @@ async def require_token(request: Request, call_next):
     if request.cookies.get("annot_token") != TOKEN and q != TOKEN:
         return PlainTextResponse("Open the link that includes ?token=...", status_code=401)
     resp = await call_next(request)
+    if request.url.path == "/" or request.url.path.startswith("/static/"):
+        resp.headers["Cache-Control"] = "no-cache"   # browsers must revalidate, so a deploy reaches them at once
     if q == TOKEN:
         resp.set_cookie("annot_token", TOKEN, httponly=True, samesite="strict", max_age=30 * 86400,
                         secure=request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https")
@@ -142,6 +145,9 @@ def patient_label(sid):
 def dz(sid):
     s = openslide.OpenSlide(slide_path(MAN.loc[sid, "file"]))
     return s, DeepZoomGenerator(s, tile_size=254, overlap=1, limit_bounds=False)
+
+
+app.include_router(expert_roi_router(MAN, lambda sid: dz(sid)[0], patient_label))
 
 
 @app.get("/")

@@ -4,51 +4,69 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>hSS Review</title>
-<link rel="stylesheet" href="static/style.css">
+<link rel="stylesheet" href="static/style.css?v=4">
 <script src="static/vendor/openseadragon.min.js"></script>
 </head>
-<body>
+<body data-mode="segments">
 <header id="top">
   <div class="brand">hSS&nbsp;review</div>
+  <div id="modeTabs" class="mode-tabs" role="tablist" aria-label="What to work on">
+    <button type="button" role="tab" data-mode="segments" title="Review the model's segmentation and the slide subtype">Segments</button>
+    <button type="button" role="tab" data-mode="rois" title="Draw your own ROIs on a slide and say what they show">Pick ROIs</button>
+    <button type="button" role="tab" data-mode="all" title="See the ROIs you have picked, on all slides">My ROIs <span id="roiCount"></span></button>
+  </div>
   <select id="segRun" class="run-select" aria-label="Segmentation run" title="Segmentation run being reviewed (switches the app for everyone)"></select>
   <div id="slideTitle" class="slide-title">Select a slide</div>
   <div class="spacer"></div>
   <div id="progress" class="progress" title="Slides with a saved subtype"></div>
-  <label class="reviewer">Reviewer <input id="reviewer" placeholder="initials" maxlength="24" autocomplete="off"></label>
+  <label class="reviewer">Reviewer <input id="reviewer" aria-label="Reviewer initials" placeholder="initials" maxlength="24" autocomplete="off"></label>
   <div class="menu">
     <button id="exportBtn" class="ghost">Export</button>
     <div id="exportMenu" class="menu-pop hidden">
       <a href="api/export/slide_reviews.csv" download>Slide reviews audit (CSV)</a>
       <a id="exportSlide" href="#" download>This slide, labelled segments (GeoJSON, QuPath)</a>
       <a href="api/export/cluster_labels.csv" download>Cluster labels audit (CSV)</a>
+      <div class="tool-sep"></div>
+      <a id="exportMyCsv" href="#" download>My ROIs and annotations (CSV)</a>
+      <a id="exportMyGeo" href="#" download>My ROIs (GeoJSON, QuPath)</a>
+      <a href="api/export/expert_rois.csv" download>Every reviewer's ROIs, to compare (CSV)</a>
+      <a href="api/export/expert_rois_audit.csv" download>ROI audit trail, every change (CSV)</a>
     </div>
+  </div>
+  <div class="menu">
+    <button id="layoutBtn" class="ghost" title="Show, hide or reset panels">Layout</button>
+    <div id="layoutMenu" class="menu-pop hidden" role="menu"></div>
   </div>
   <a id="tutorialLink" class="ghost-link" href="static/tutorial.html" target="_blank" rel="noopener" title="Opens in a new tab, so unsaved work here stays">Tutorial</a>
   <button id="helpBtn" class="ghost" title="Keyboard shortcuts (?)">?</button>
 </header>
 
 <main id="roiMain">
-  <aside id="left">
+  <aside id="left" aria-label="Slides">
+    <button class="rail" data-fold-side="left" title="Show the slide list (,)">› Slides</button>
     <div class="panel-head">
       <span>Slides</span>
+      <span class="spacer"></span>
       <select id="slideFilter" aria-label="Filter slides">
         <option value="all">All</option>
         <option value="todo">Not reviewed</option>
         <option value="done">Reviewed</option>
         <option value="qc">QC flagged</option>
       </select>
+      <button class="fold-btn" data-fold-side="left" title="Fold the slide list (,)" aria-label="Fold the slide list">‹</button>
     </div>
     <input id="slideSearch" class="search" placeholder="Filter by case or patient" autocomplete="off">
     <ul id="slideList" class="slide-list"></ul>
   </aside>
+  <div id="leftResizer" class="resizer" role="separator" aria-orientation="vertical" aria-label="Resize the slide list" tabindex="0" title="Drag to resize, double-click to reset"></div>
 
   <section id="center">
     <div id="viewerWrap">
       <div id="viewer"></div>
       <canvas id="edCanvas" aria-hidden="true"></canvas>
-      <div id="tools" class="tools">
-        <label>Overlay
-          <select id="heatSel">
+      <div id="tools" class="tools fp" data-fp="tools" data-title="Overlay"><div class="fp-body">
+        <label>
+          <select id="heatSel" aria-label="Overlay">
             <optgroup label="Segmentation" data-g="clusters">
               <option value="all@clusters">Segments, colour per class</option>
               <option value="slide@clusters">Labels on this slide</option>
@@ -60,20 +78,30 @@
         <input id="heatOpacity" type="range" min="0" max="1" step="0.05" value="0.45" aria-label="Overlay opacity">
         <label title="Draw the outline of every segment"><input id="linesChk" type="checkbox" checked> Lines</label>
         <button id="fitBtn" class="tool" title="Whole slide (F)">Fit</button>
-      </div>
-      <div id="toolbox" class="toolbox" role="toolbar" aria-label="Segmentation tools"></div>
-      <div id="toolOpts" class="tool-opts hidden">
+      </div></div>
+      <div id="toolbox" class="toolbox fp" data-fp="toolbox" data-title="Tools"><div id="toolboxBody" class="fp-body" role="toolbar" aria-label="Segmentation tools"></div></div>
+      <div id="roiTools" class="toolbox fp" data-fp="roitools" data-title="Tools"><div id="roiToolsBody" class="fp-body" role="toolbar" aria-label="ROI tools"></div></div>
+      <div id="toolOpts" class="tool-opts fp hidden" data-fp="opts" data-title="Tool options"><div class="fp-body">
         <label id="edTargetWrap">Add to <select id="edTarget" aria-label="Segment to add to"></select></label>
         <label id="edSizeWrap">Size <input id="edSize" type="range" min="20" max="2000" step="10" aria-label="Brush size"> <span id="edSizeVal" class="tabnum"></span></label>
         <span id="edHint" class="tool-hint"></span>
         <button id="edApply" class="primary hidden">Apply</button>
-      </div>
-      <div id="legend" class="legend"></div>
+      </div></div>
+      <div id="legend" class="legend fp" data-fp="legend" data-title="Legend"><div id="legendBody" class="fp-body"></div></div>
+      <div id="mapPanel" class="map-panel fp" data-fp="map" data-title="Minimap"><div id="navBody" class="fp-body"></div><span class="fp-resize" title="Drag to resize"></span></div>
     </div>
   </section>
 
-  <aside id="right">
+  <div id="gallery" aria-label="All ROIs"></div>
+  <div id="rightResizer" class="resizer" role="separator" aria-orientation="vertical" aria-label="Resize the review panel" tabindex="0" title="Drag to resize, double-click to reset"></div>
+  <aside id="right" aria-label="Review">
+    <button class="rail" data-fold-side="right" title="Show the review panel (.)">‹ Review</button>
+    <div class="panel-head">
+      <button class="fold-btn" data-fold-side="right" title="Fold the review panel (.)" aria-label="Fold the review panel">›</button>
+      <span>Review</span>
+    </div>
     <div id="srPanel" class="spanel empty">Select a slide.</div>
+    <div id="rpPanel" class="spanel empty">Select a slide.</div>
   </aside>
 </main>
 
@@ -103,12 +131,27 @@
       <div><kbd>Space</kbd> + drag Pan while drawing</div>
       <div><kbd>Esc</kbd> Cancel, then back to Move</div>
     </div>
+    <h3 class="kh">Panels</h3>
+    <div class="keys">
+      <div><kbd>,</kbd> Fold the slide list</div>
+      <div><kbd>.</kbd> Fold the review panel</div>
+    </div>
+    <h3 class="kh">Pick ROIs tab</h3>
+    <div class="keys">
+      <div><kbd>D</kbd> Polygon &nbsp; <kbd>S</kbd> Square &nbsp; <kbd>O</kbd> Oval</div>
+      <div><kbd>V</kbd> Move &nbsp; <kbd>Backspace</kbd> Remove a point</div>
+      <div><kbd>Enter</kbd> Close the polygon, or save the ROI</div>
+      <div><kbd>1</kbd>…<kbd>9</kbd> <kbd>0</kbd> Choose a label</div>
+      <div><kbd>Esc</kbd> Cancel, one step back</div>
+    </div>
     <p class="muted">Every save and edit is stored with reviewer and time. Later ones supersede earlier ones; nothing is overwritten, and the model's segmentation is kept. New here? Read the <a href="static/tutorial.html" target="_blank" rel="noopener">tutorial</a>.</p>
     <button id="helpClose">Close</button>
   </div>
 </div>
 <div id="toast" class="toast hidden"></div>
-<script src="static/app.js"></script>
-<script src="static/editor.js"></script>
+<script src="static/app.js?v=4"></script>
+<script src="static/panels.js?v=4"></script>
+<script src="static/editor.js?v=4"></script>
+<script src="static/rois.js?v=4"></script>
 </body>
 </html>

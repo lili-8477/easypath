@@ -138,6 +138,7 @@ function paint() {
       edCtx.strokeStyle = '#fff'; edCtx.stroke();
     }
   }
+  roiPaint(m, W, H);
 }
 viewer.addHandler('update-viewport', edDraw);
 viewer.addHandler('animation', edDraw);
@@ -193,6 +194,7 @@ async function finishPaint(action, geometry) {
       Ed.target = res.segment;
       SR.focus = res.segment;
       SR.form.checked.delete(res.segment);
+      Panels.showReview();
       renderSR();
       toast(`New segment ${cname(res.segment)} added. Choose its label in the panel.`);
     }
@@ -228,9 +230,12 @@ const onNavigator = (e) => e.target.closest && e.target.closest('.navigator');
 const drawing = () => Ed.tool !== 'nav' && !Ed.space;
 
 viewerEl.addEventListener('pointerdown', (e) => {
+  // the viewer takes no focus of its own: leave any box now, or the next shortcut would be typed into it
+  if (/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) document.activeElement.blur();
   if (onNavigator(e) || !slideItem() || e.button !== 0) return;
   if (!drawing()) { Ed.press = Ed.tool === 'nav' ? { x: e.clientX, y: e.clientY } : null; return; }
   e.stopPropagation(); e.preventDefault();
+  if (!slideShown()) { toast('The slide is still opening', true); return; }
   if (!canEdit()) { toast('This slide has no segmentation to edit', true); return; }
   if (Ed.busy || !reviewer()) return;
   viewerEl.setPointerCapture(e.pointerId);
@@ -254,7 +259,7 @@ viewerEl.addEventListener('pointermove', (e) => {
   if (!slideItem()) return;
   const p = imgPoint(e);
   Ed.cursor = p;
-  if (!drawing()) { if (Ed.tool === 'nav') { Ed.hover = ringAt(p); edDraw(); } return; }
+  if (!drawing()) { if (Ed.tool === 'nav' && !roiMode()) { Ed.hover = ringAt(p); edDraw(); } return; }
   e.stopPropagation();
   if (Ed.tool === 'lines') {
     if (Ed.sel && Ed.sel.dragging) { Ed.sel.ring[Ed.sel.grab] = p; Ed.sel.dirty = true; }
@@ -270,7 +275,7 @@ viewerEl.addEventListener('pointermove', (e) => {
 viewerEl.addEventListener('pointerup', (e) => {
   if (!slideItem()) return;
   if (!drawing()) {
-    if (Ed.tool === 'nav' && Ed.press && Math.hypot(e.clientX - Ed.press.x, e.clientY - Ed.press.y) < 4) {
+    if (Ed.tool === 'nav' && !roiMode() && Ed.press && Math.hypot(e.clientX - Ed.press.x, e.clientY - Ed.press.y) < 4) {
       const r = ringAt(imgPoint(e));
       if (r) focusSeg(r.segment);
     }
@@ -347,7 +352,7 @@ function setTool(t) {
   edRenderTools(); edDraw();
 }
 function edRenderTools() {
-  const box = $('#toolbox'), d = SR.data && SR.data.edits;
+  const box = $('#toolboxBody'), d = SR.data && SR.data.edits;
   box.querySelectorAll('[data-tool]').forEach((b) => {
     b.classList.toggle('on', b.dataset.tool === Ed.tool);
     b.setAttribute('aria-pressed', b.dataset.tool === Ed.tool);
@@ -374,12 +379,12 @@ function edRenderTools() {
   $('#edSize').value = Ed.brushUm;
   $('#edSizeVal').textContent = Ed.brushUm >= 1000 ? `${(Ed.brushUm / 1000).toFixed(1)} mm` : `${Ed.brushUm} µm`;
 }
-$('#toolbox').innerHTML = Object.entries(TOOLS).map(([id, t]) => `
+$('#toolboxBody').innerHTML = Object.entries(TOOLS).map(([id, t]) => `
     <button data-tool="${id}" title="${t.label} (${t.key})"><svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">${t.icon}</svg><span>${t.label}</span></button>`).join('') + `
     <div class="tool-sep"></div>
     <button id="edUndo" title="Undo the last edit on this slide (Z)"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 5L4 9l4 4M4 9h10a5 5 0 010 10h-3"/></svg><span>Undo</span></button>
     <button id="edRedo" title="Redo (Shift+Z)"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 5l4 4-4 4M20 9H10a5 5 0 000 10h3"/></svg><span>Redo</span></button>`;
-$('#toolbox').addEventListener('click', (e) => {
+$('#toolboxBody').addEventListener('click', (e) => {
   const b = e.target.closest('button');
   if (!b) return;
   if (b.dataset.tool) setTool(b.dataset.tool);

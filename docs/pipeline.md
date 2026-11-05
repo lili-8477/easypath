@@ -105,6 +105,24 @@ Reviewers have a step-by-step guide in the app: the Tutorial link in the header 
 - Moving a line: area gained is taken from whatever was there, and area given up goes to the nearest other segment or to background, so neighbours stay in contact. Undo is per slide, not per reviewer.
 - Model labels are recomputed over the edited shape from the same CONCH patch scores (512 px patches), so they are coarse for small shapes. Encoder features are not recomputed.
 
+## Expert ROIs
+
+The **Pick ROIs** tab lets an expert outline an area with a polygon, square or oval and label it; **My ROIs** shows that expert's ROIs as a gallery (`app/expertroi.py`, `app/static/rois.js`). Labels: glandular, spindle cells, poorly differentiated (round cells), myxoid, osteoid (bone forming), collagenous, and normal tissue (vessels, muscle, nerve, fat). A ROI can have several.
+
+- Each reviewer has a workspace: the app lists and changes only the ROIs drawn under their initials (`LL` and `ll` are the same person), and the server refuses changes from anyone else. Experts therefore annotate independently. Initials are the only identity, so this keeps people apart but is not access control: anyone typing someone's initials opens that workspace.
+- `/api/export/expert_rois.csv` without `?reviewer=` holds every reviewer's ROIs, to compare them. It is available to anyone with the app's link.
+- Stored in `expert_roi_events` (append-only, level-0 coordinates). Each event holds the full label set and comment; the latest event of a ROI is its current state, and delete and restore are events too. An outline never changes after it is drawn. An oval is stored as a 72-point polygon.
+- Separate from the older `manual_rois` / `reviews` tables and from the segmentation run, so switching runs does not affect ROIs, and slides without a segmentation can have them.
+- Moving to another slide or tab saves an open ROI if it has a label, and otherwise drops it with a message. An unfinished polygon is dropped too.
+- Other exports: `/api/export/expert_rois.geojson` (`?reviewer=`, `?slide=`), `/api/export/expert_rois_audit.csv`.
+- The tab is kept per browser. A link can name it: `…/#rois` or `…/#my-rois`.
+
+## Layout
+
+The side panels resize and fold, the panels on the viewer move and fold, the minimap also resizes, and the sections of the review panel fold (`app/static/panels.js`; kept per browser in `localStorage`). If both side panels do not fit the window, the one opened less recently folds to its rail, so the review panel cannot end up off screen.
+
+`/` and `/static/*` are served with `Cache-Control: no-cache`, so browsers revalidate and a deploy reaches them at once. When `style.css`, `app.js`, `panels.js`, `editor.js` or `rois.js` change in a way that must not mix with an older copy, raise the `?v=` in `index.html` too.
+
 ## Encoders and per-slide K (s1 / s2)
 
 `s1_dense_features.py` takes `ENCODER=conch15|hoptimus0|hoptimus1|uni2h|uni|virchow2` (CONCH v1.5, H-optimus-0, H-optimus-1, UNI2-h, UNI, Virchow2). CONCH v1.5
@@ -122,4 +140,4 @@ Output goes to `results/annot/seg_<encoder>_kmax<K>/` (`slide_k.csv` lists segme
     ENCODER=uni2h K_MAX=10 python s2_segment.py                                       # CPU
 
 The review app lists every `results/annot/seg*` run in the header; switching it changes the run for every
-open session, and labels are stored per run.
+open session, and labels are stored per run. The choice is kept in `results/annot/active_run.txt`, so it survives a restart; `SEG_DIR`, if set, still takes precedence at startup.

@@ -23,6 +23,8 @@ const TAG = { model: 'model', class: 'from class', slide: 'confirmed', accepted:
 const OVERLAYS = ['all@clusters', 'slide@clusters', 'pred@clusters', 'none'];
 
 const S = { slides: [], sid: null, info: null, heat: 'all@clusters', opacity: 0.45, rev: {} };
+const roiMode = () => document.body.dataset.mode !== 'segments';   // Pick ROIs or All ROIs: rois.js
+const slideDone = (s) => (roiMode() ? roiCount(s.slide_id) > 0 : S.rev[s.slide_id]);
 const SR = { data: null, form: null, solo: null, pick: new Set(), focus: null, noteOpen: new Set(), noteDraft: {} };
 
 /* ------------------------------------------------------------ api */
@@ -43,11 +45,17 @@ function toast(msg, err) {
 
 /* ------------------------------------------------------------ reviewer */
 const reviewerInput = $('#reviewer');
+const INITIALS_IDLE_MS = 2000;
 try { reviewerInput.value = localStorage.getItem('hss_reviewer') || ''; } catch (e) { /* storage blocked */ }
+reviewerInput.classList.toggle('need', !reviewerInput.value);
+// Shortcuts are letters, so leave the box soon after typing: a J pressed in it would otherwise become part of the initials.
 reviewerInput.addEventListener('input', () => {
-  reviewerInput.classList.remove('need');
+  reviewerInput.classList.toggle('need', !reviewerInput.value.trim());
   try { localStorage.setItem('hss_reviewer', reviewerInput.value.trim()); } catch (e) { /* ignore */ }
+  clearTimeout(reviewerInput.idle);
+  reviewerInput.idle = setTimeout(() => { if (reviewerInput.value.trim()) reviewerInput.blur(); }, INITIALS_IDLE_MS);
 });
+reviewerInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); reviewerInput.blur(); } });
 function reviewer() {
   const v = reviewerInput.value.trim();
   if (!v) { reviewerInput.classList.add('need'); reviewerInput.focus(); toast('Enter your initials first', true); }
@@ -56,18 +64,25 @@ function reviewer() {
 
 /* ------------------------------------------------------------ viewer */
 const viewer = OpenSeadragon({
-  id: 'viewer', showNavigationControl: false, showNavigator: true, navigatorPosition: 'BOTTOM_RIGHT',
+  id: 'viewer', showNavigationControl: false, showNavigator: true, navigatorId: 'navBody',
   navigatorBackground: '#0b0c0e', animationTime: 0.35, maxZoomPixelRatio: 2, visibilityRatio: 0.3,
   gestureSettingsMouse: { clickToZoom: false, dblClickToZoom: true }, preserveImageSizeOnResize: true,
 });
 const slideItem = () => viewer.world.getItemAt(0);
 const imgRect = (r) => slideItem().imageToViewportRectangle(r.x, r.y, r.w, r.h);
+/* While a slide opens S.sid is already the new one but the viewer still shows the old one. Nothing may be drawn then: it would
+   be drawn on one slide and saved on the other. So this asks what is really on the viewer rather than keeping a flag. */
+const slideShown = () => {
+  const it = slideItem();
+  return !!it && !!S.info && S.info.slide_id === S.sid && String(it.source.tilesUrl || '').includes(`dzi/${encodeURIComponent(S.sid)}_files`);
+};
 
 function openSlide(sid) {
   return new Promise(async (resolve) => {
     if (S.sid === sid && slideItem()) return resolve();
+    roiFlush();
     S.sid = sid; SR.data = null; SR.solo = null; SR.pick = new Set(); SR.focus = null; SR.noteOpen = new Set(); SR.noteDraft = {};
-    edOnSlide();
+    edOnSlide(); roiOnSlide();
     if (S.heat !== 'none' && !OVERLAYS.includes(S.heat)) S.heat = 'all@clusters';
     $('#heatSel').value = S.heat;
     $('#srPanel').className = 'spanel empty'; $('#srPanel').textContent = 'Loading…';
@@ -108,8 +123,9 @@ function setHeat() {
 function refreshLegend() {
   const lg = $('#legend');
   if (S.heat === 'none' || !S.info || !S.info.seg) { lg.classList.add('hidden'); return; }
-  lg.innerHTML = clusterLegend(S.heat.split('@')[0]);
-  lg.classList.toggle('hidden', !lg.innerHTML);
+  const body = $('#legendBody');
+  body.innerHTML = clusterLegend(S.heat.split('@')[0]);
+  lg.classList.toggle('hidden', !body.innerHTML);
 }
 
 function clusterLegend(cls) {
@@ -143,28 +159,31 @@ async function loadSlides() {
   renderSlideList(); renderProgress();
 }
 function renderProgress() {
-  const n = S.slides.filter((s) => S.rev[s.slide_id]).length;
-  $('#progress').textContent = `${n} / ${S.slides.length} slides reviewed`;
+  const n = S.slides.filter(slideDone).length, el = $('#progress');
+  el.textContent = roiMode() ? `${n} / ${S.slides.length} slides have ROIs` : `${n} / ${S.slides.length} slides reviewed`;
+  el.title = roiMode() ? 'Slides with at least one ROI' : 'Slides with a saved subtype';
 }
 function visibleSlides() {
   const f = $('#slideFilter').value, q = $('#slideSearch').value.trim().toLowerCase();
-  return S.slides.filter((s) => (f === 'all' || (f === 'todo' && !S.rev[s.slide_id]) || (f === 'done' && S.rev[s.slide_id]) ||
+  return S.slides.filter((s) => (f === 'all' || (f === 'todo' && !slideDone(s)) || (f === 'done' && slideDone(s)) ||
     (f === 'qc' && s.qc_status !== 'ok')) && (!q || `${s.slide_id} ${s.patient}`.toLowerCase().includes(q)));
 }
 function renderSlideList() {
   $('#slideList').innerHTML = visibleSlides().map((s) => {
     const flags = Object.entries(s.qc_flags || {}).filter(([, v]) => v > 0.1).map(([k]) => k.replace('_', ' '));
-    const r = S.rev[s.slide_id];
+    const r = S.rev[s.slide_id], nr = roiMode() ? roiCount(s.slide_id) : 0;
     return `<li data-sid="${esc(s.slide_id)}" class="${s.slide_id === S.sid ? 'active' : ''}">
       <div class="sl-row"><span class="qc-dot qc-${esc(s.qc_status)}" title="QC ${esc(s.qc_status)}${flags.length ? ': ' + esc(flags.join(', ')) : ''}"></span>
         <span class="sl-name">${esc(s.patient)}</span>
-        ${r ? `<span class="lchip done" title="${esc(r.reviewer)} · ${esc((r.ts || '').slice(0, 10))}">${esc(slab(r.subtype))}${r.patterns ? ' · ' + esc(r.patterns.split(',').map(slab).join(', ')) : ''}</span>` : ''}</div>
+        ${roiMode() ? (nr ? `<span class="lchip done">${nr} ${nr === 1 ? 'ROI' : 'ROIs'}</span>` : '') : r ? `<span class="lchip done" title="${esc(r.reviewer)} · ${esc((r.ts || '').slice(0, 10))}">${esc(slab(r.subtype))}${r.patterns ? ' · ' + esc(r.patterns.split(',').map(slab).join(', ')) : ''}</span>` : ''}</div>
       <div class="sl-meta">${esc(s.cohort)} · ${esc(s.slide_id.replace(/^(MSK|LUND|Utah)_/, ''))}${s.histology ? ' · ' + esc(s.histology) : ''}</div></li>`;
   }).join('');
 }
 $('#slideList').addEventListener('click', (e) => {
   const li = e.target.closest('li');
-  if (li) openSlide(li.dataset.sid);
+  if (!li) return;
+  if (document.body.dataset.mode === 'all') setMode('rois');   // the gallery has no slide to show: open it to work on it
+  openSlide(li.dataset.sid);
 });
 $('#slideFilter').addEventListener('change', renderSlideList);
 $('#slideSearch').addEventListener('input', renderSlideList);
@@ -226,6 +245,13 @@ function scoreLine(rel) {
   return Object.entries(rel).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k, v]) => `${esc(slab(k).toLowerCase())} ${pct(v)}`).join(' · ');
 }
 
+function section(id, title, side, body, cls = '') {   // a foldable section of the review panel; a folded one keeps its summary
+  const open = Panels.secOpen(id);
+  return `<section class="sec ${cls}">
+      <div class="sec-head"><h3><button type="button" class="sec-fold" data-fold="${id}" aria-expanded="${open}"><span class="chev">${open ? '▾' : '▸'}</span>${title}</button></h3>${side}</div>
+      ${open ? body : ''}</section>`;
+}
+
 function renderSR() {
   const d = SR.data, f = SR.form, p = $('#srPanel'), pr = d.predicted, dv = d.derived;
   p.className = 'spanel';
@@ -234,16 +260,15 @@ function renderSR() {
   const nChecked = segs.filter((s) => f.checked.has(s.segment)).length, nOpen = segs.length - nChecked;
   const when = (ts) => esc((ts || '').replace('T', ' ').slice(0, 16));
   p.innerHTML = `
-    <div class="sec first"><h3>Synovial sarcoma subtype</h3>
+    ${section('subtype', 'Synovial sarcoma subtype', f.subtype ? `<span class="small txt">${esc(slab(f.subtype))}</span>` : '', `
       ${S.info && S.info.histology ? `<div class="small muted">Clinical histology: <b class="txt">${esc(S.info.histology)}</b></div>` : ''}
       <div class="sugg">Model suggests <b>${esc(pr.call)}</b>${pr.tumor_mm2 > 0 ? ` <span class="muted">(glandular ${pct(pr.glandular)}, corded ${pct(pr.corded)}, round cell ${pct(pr.round_cell)} of SS area)</span>` : ''}</div>
       ${dv.tumor_mm2 > 0 && segs.some((s) => s.label) ? `<div class="small muted">From saved segment labels: <b class="txt">${esc(dv.call)}</b></div>` : ''}
       <div class="sgrid">${d.subtypes.map((t) => `<button data-st="${t}" class="${f.subtype === t ? 'on' : ''}">${esc(slab(t))} <kbd>${SUBTYPE_KEY[t]}</kbd></button>`).join('')}</div>
       <div class="seg"><span class="seg-lab">Patterns</span>
-        ${d.patterns.map((t) => `<button data-pt="${t}" class="${f.patterns.has(t) ? 'on' : ''}">${esc(slab(t))} <kbd>${PATTERN_KEY[t]}</kbd></button>`).join('')}</div>
-    </div>
-    <div class="sec"><div class="sec-head"><h3>Segments on this slide</h3><span class="small ${nOpen ? 'muted' : 'allchecked'}">${nChecked} of ${segs.length} checked</span>
-        ${nOpen ? `<button class="mini" id="srAcceptAll" title="Accept the label shown on every segment not yet checked">Accept all</button>` : ''}</div>
+        ${d.patterns.map((t) => `<button data-pt="${t}" class="${f.patterns.has(t) ? 'on' : ''}">${esc(slab(t))} <kbd>${PATTERN_KEY[t]}</kbd></button>`).join('')}</div>`, 'first')}
+    ${section('segments', 'Segments on this slide', `<span class="small ${nOpen ? 'muted' : 'allchecked'}">${nChecked} of ${segs.length} checked</span>
+        ${nOpen && Panels.secOpen('segments') ? `<button class="mini" id="srAcceptAll" title="Accept the label shown on every segment not yet checked">Accept all</button>` : ''}`, `
       <div class="small muted note" title="Model label: CONCH zero-shot scores averaged over the segment; SS pattern and stroma type are called relative to the cohort baseline.">Model stroma: ${pct(pr.stroma_frac)} of tissue.${d.patterns_ready ? '' : ' Corded and stroma types are still being computed.'}</div>
       <div class="mergebar"><span class="small muted">${SR.pick.size ? `${SR.pick.size} ticked` : 'Tick segments to merge them'}</span>
         ${SR.pick.size >= 2 ? `<button data-merge="slide" title="Merge into one segment on this slide">On this slide</button>
@@ -264,14 +289,15 @@ function renderSR() {
             ${s.comments.map((c) => `<div class="snote"><span class="muted small">${esc(c.reviewer)} · ${when(c.ts)}</span><div>${esc(c.comment)}</div></div>`).join('')}
             <textarea data-notein="${s.segment}" placeholder="Comment on ${cname(s.segment)}" aria-label="Comment on ${cname(s.segment)}">${esc(SR.noteDraft[s.segment] || '')}</textarea>
             <button class="mini" data-notesave="${s.segment}">Add comment</button></div>` : ''}
-        </div>`).join('')}
-    </div>
+        </div>`).join('')}`)}
     <div class="sfoot">
       <textarea id="srComment" placeholder="Comment on this slide (optional)" aria-label="Comment on this slide">${esc(f.comment)}</textarea>
       <div class="save-row"><button class="primary" id="srSave">Save slide <kbd>Enter</kbd></button><span class="muted small">${nOpen ? `${nOpen} unchecked ${nOpen === 1 ? 'stays' : 'stay'} as suggested, not confirmed` : 'Then the next unreviewed slide'}</span></div>
     </div>
-    <div class="sec"><h3>History</h3><div class="hist">${d.history.length ? d.history.map((h) => `<div>${esc((h.ts || '').replace('T', ' ').slice(0, 16))} · <b>${esc(h.reviewer)}</b> · ${esc(slab(h.subtype))}${h.patterns ? ' · ' + esc(h.patterns.split(',').map(slab).join(', ')) : ''} <span class="muted">(model: ${esc(h.predicted_subtype)})</span>${h.comment ? `<div class="muted">“${esc(h.comment)}”</div>` : ''}</div>`).join('') : 'Not reviewed yet.'}</div></div>
-    ${d.edits.log.length ? `<div class="sec"><h3>Segmentation edits in force (${d.edits.log.length})</h3><div class="hist">${d.edits.log.map((e) => `<div>${when(e.ts)} · <b>${esc(e.reviewer)}</b> · ${e.segment === 255 ? 'Erased' : `${EDIT_NAME[e.action] || esc(e.action)} ${cname(e.segment)}`}</div>`).join('')}</div></div>` : ''}`;
+    ${section('history', 'History', '', `<div class="hist">${d.history.length ? d.history.map((h) => `<div>${esc((h.ts || '').replace('T', ' ').slice(0, 16))} · <b>${esc(h.reviewer)}</b> · ${esc(slab(h.subtype))}${h.patterns ? ' · ' + esc(h.patterns.split(',').map(slab).join(', ')) : ''} <span class="muted">(model: ${esc(h.predicted_subtype)})</span>${h.comment ? `<div class="muted">“${esc(h.comment)}”</div>` : ''}</div>`).join('') : 'Not reviewed yet.'}</div>`)}
+    ${d.edits.log.length ? section('edits', `Segmentation edits in force (${d.edits.log.length})`, '', `<div class="hist">${d.edits.log.map((e) => `<div>${when(e.ts)} · <b>${esc(e.reviewer)}</b> · ${e.segment === 255 ? 'Erased' : `${EDIT_NAME[e.action] || esc(e.action)} ${cname(e.segment)}`}</div>`).join('')}</div>`) : ''}`;
+
+  p.querySelectorAll('[data-fold]').forEach((b) => b.addEventListener('click', () => { Panels.toggleSec(b.dataset.fold); renderSR(); }));
 
   p.querySelectorAll('[data-st]').forEach((b) => b.addEventListener('click', () => setSubtype(b.dataset.st)));
   p.querySelectorAll('[data-pt]').forEach((b) => b.addEventListener('click', () => togglePattern(b.dataset.pt)));
@@ -312,6 +338,7 @@ function renderSR() {
 const segsByArea = () => [...SR.data.segments].sort((a, b) => b.area_mm2 - a.area_mm2);
 function focusSeg(k, zoom) {
   SR.focus = k;
+  Panels.showSec('segments');
   renderSR(); edDraw();
   if (zoom) zoomSeg(k);
 }
@@ -334,6 +361,7 @@ function acceptFocus() {   // accept the selected segment (or start at the first
   else { renderSR(); toast('Every segment checked. Choose the subtype and save.'); }
 }
 function toggleNote(k) {
+  Panels.showReview(); Panels.showSec('segments');
   if (SR.noteOpen.has(k)) SR.noteOpen.delete(k); else SR.noteOpen.add(k);
   SR.focus = k; renderSR();
   if (SR.noteOpen.has(k)) document.querySelector(`[data-notein="${k}"]`).focus();
@@ -415,7 +443,7 @@ async function saveSR() {
       reviewer: who, subtype: SR.form.subtype, patterns: [...SR.form.patterns], segments: labels, comment: SR.form.comment,
     });
   } catch (err) { toast('Not saved: ' + err.message, true); return; }
-  toast(`${slab(SR.form.subtype)} · saved`);
+  toast(`${slab(SR.form.subtype)} · saved as ${who}`);
   S.rev = await api('api/slide_reviews');
   renderProgress(); renderSlideList();
   const v = visibleSlides(), i = v.findIndex((s) => s.slide_id === sid);
@@ -433,7 +461,7 @@ $('#heatOpacity').addEventListener('input', (e) => {
 $('#fitBtn').addEventListener('click', () => viewer.viewport.goHome());
 $('#helpBtn').addEventListener('click', () => $('#help').classList.remove('hidden'));
 $('#helpClose').addEventListener('click', () => $('#help').classList.add('hidden'));
-$('#exportBtn').addEventListener('click', (e) => { e.stopPropagation(); $('#exportMenu').classList.toggle('hidden'); });
+$('#exportBtn').addEventListener('click', (e) => { e.stopPropagation(); $('#layoutMenu').classList.add('hidden'); $('#exportMenu').classList.toggle('hidden'); });
 document.addEventListener('click', () => $('#exportMenu').classList.add('hidden'));
 
 /* ------------------------------------------------------------ keyboard */
@@ -443,13 +471,19 @@ document.addEventListener('keydown', (e) => {
     $('#help').classList.add('hidden');
     document.querySelectorAll('.modal:not(#help)').forEach((m) => m.remove());
     if (typing) document.activeElement.blur();
+    else if (roiMode()) roiEscape();
     else edEscape();
     return;
   }
-  if (!typing && (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); edUndoRedo(e.shiftKey ? 'redo' : 'undo'); return; }
+  // always taken here: the browser's own undo would reach back into the initials box and empty it
+  if (!typing && (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); if (!roiMode()) edUndoRedo(e.shiftKey ? 'redo' : 'undo'); return; }
   if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
+  const active = document.activeElement;
+  if (active.classList.contains('resizer')) return;   // its arrow keys resize the panel
+  // Enter on a control reached by keyboard activates that control, not Save
+  if (e.key === 'Enter' && /^(BUTTON|A)$/.test(active.tagName) && active.matches(':focus-visible')) return;
   const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
-  if (edKey(e, k)) { e.preventDefault(); e.stopPropagation(); return; }
+  if (roiMode() ? roiKey(e, k) : edKey(e, k)) { e.preventDefault(); e.stopPropagation(); return; }
   const acts = {
     m: () => setSubtype('monophasic'), b: () => setSubtype('biphasic'), p: () => setSubtype('poorly_differentiated'),
     n: () => setSubtype('not_ss'), q: () => setSubtype('cannot_assess'),
@@ -457,11 +491,12 @@ document.addEventListener('keydown', (e) => {
     Enter: saveSR, ArrowDown: () => stepSlide(1), ArrowUp: () => stepSlide(-1),
     f: () => viewer.viewport.goHome(),
     j: () => stepSeg(1), k: () => stepSeg(-1), a: acceptFocus,
-    t: () => { if (SR.focus != null) { if (!SR.noteOpen.has(SR.focus)) toggleNote(SR.focus); else document.querySelector(`[data-notein="${SR.focus}"]`).focus(); } },
+    t: () => { if (SR.focus != null) { if (!SR.noteOpen.has(SR.focus)) toggleNote(SR.focus); else { Panels.showReview(); if (Panels.showSec('segments')) renderSR(); document.querySelector(`[data-notein="${SR.focus}"]`).focus(); } } },
+    ',': () => Panels.toggleSide('left'), '.': () => Panels.toggleSide('right'),
     h: () => { SR.solo = null; setOverlay(OVERLAYS[(OVERLAYS.indexOf(S.heat) + 1) % OVERLAYS.length]); if (SR.data) renderSR(); },
     '?': () => $('#help').classList.remove('hidden'),
   };
-  if (/^[1-9]$/.test(k) && SR.data) {
+  if (/^[1-9]$/.test(k) && SR.data && !roiMode()) {
     const segs = [...SR.data.segments].sort((a, b) => b.area_mm2 - a.area_mm2);
     if (segs[+k - 1]) acts[k] = () => solo(segs[+k - 1].segment);
   }
@@ -482,8 +517,8 @@ async function loadRuns() {
 /* ------------------------------------------------------------ start (once editor.js has loaded too) */
 document.addEventListener('DOMContentLoaded', () => (async () => {
   await loadRuns();
+  await roiLoad();
   await loadSlides();
-  const first = S.slides.find((s) => !S.rev[s.slide_id]) || S.slides[0];
+  const first = S.slides.find((s) => !slideDone(s)) || S.slides[0];
   if (first) await openSlide(first.slide_id);
-  if (!reviewerInput.value) reviewerInput.focus();
 })().catch((err) => toast('Could not load: ' + err.message, true)));
