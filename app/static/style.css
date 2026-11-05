@@ -318,7 +318,9 @@ button:disabled { opacity: .45; cursor: default; }
 body[data-mode="segments"] #rpPanel, body[data-mode="segments"] #roiTools, body[data-mode="segments"] #gallery,
 body:not([data-mode="segments"]) #srPanel, body:not([data-mode="segments"]) #toolbox,
 body:not([data-mode="segments"]) #toolOpts, body:not([data-mode="segments"]) #segRun,
-body[data-mode="rois"] #gallery { display: none !important; }
+body[data-mode="rois"] #gallery, body[data-mode="patches"] #gallery,
+body:not([data-mode="patches"]) #paPanel, body:not([data-mode="patches"]) #patchTools,
+body[data-mode="patches"] #rpPanel, body[data-mode="patches"] #roiTools { display: none !important; }
 #viewerWrap[data-hot] #viewer { cursor: pointer; }
 body[data-mode="all"] #slideTitle { visibility: hidden; }   /* the gallery covers every slide, not the one open behind it */
 
@@ -359,6 +361,34 @@ button.danger { color: var(--s-needs); }
 .rchips { display: flex; flex-wrap: wrap; gap: 3px 9px; }
 .rchip { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; }
 
+/* review panel, Patches */
+.pa-meter { height: 8px; margin: 8px 0 6px; border-radius: 4px; background: var(--panel-2); overflow: hidden; }
+.pa-meter i { display: block; height: 100%; width: 0; background: #ffbe46; }
+.pa-meter.done i { background: #57c878; }
+.pa-meter-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.pa-meter-row kbd, .pa-show kbd { font-family: ui-monospace, Menlo, monospace; font-size: 10px; border: 1px solid var(--line); border-radius: 3px; padding: 0 4px; color: var(--muted); }
+#paSaved { min-height: 18px; margin-top: 4px; }
+.pa-err { color: var(--s-needs); }
+.pa-hint { margin: 8px 0; padding: 7px 9px; border: 1px solid var(--accent); border-radius: var(--radius); line-height: 1.45; }
+.pa-size, .pa-show { display: flex; align-items: center; gap: 8px; margin: 8px 0; color: var(--muted); }
+.pa-size input[type="range"], .pa-show input[type="range"] { flex: 1; min-width: 40px; }
+.pa-ask { color: #fff; font-weight: 600; }
+.pa-need { font-size: 12px; color: #ffbe46; }
+.roi-opts.idle .roi-opt { opacity: .55; }
+.parg { display: flex; align-items: center; gap: 4px; margin-bottom: 3px; }
+.parg-main { flex: 1; display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; padding: 5px 8px; text-align: left; background: transparent; }
+.parg-main:hover { background: var(--panel-2); }
+.parg.on .parg-main { border-color: var(--accent); background: var(--panel-2); }
+#paComment { margin-top: 4px; }
+.pa-move { margin-top: 6px; }
+.parow { display: flex; gap: 8px; width: 100%; padding: 6px 7px; margin-bottom: 2px; text-align: left; background: transparent; border-color: transparent; }
+.parow:hover { background: var(--panel-2); }
+.parow.on { background: var(--panel-2); border-color: var(--accent); }
+.parow-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; align-items: flex-start; }
+.pa-dot { flex: none; width: 10px; height: 10px; margin-top: 4px; border-radius: 2px; }
+.pa-dot.complete { background: #57c878; }
+.pa-dot.partial { background: #ffbe46; }
+
 /* My ROIs */
 #gallery { grid-column: 3 / 6; grid-row: 1; z-index: 8; min-width: 0; overflow: auto; padding: 16px 20px 32px; background: var(--bg); }
 .gal-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
@@ -379,7 +409,7 @@ button.danger { color: var(--s-needs); }
 .gal-empty { padding: 56px 0; text-align: center; color: var(--muted); }
 
 /* narrow windows, or a browser zoomed far in: the header wraps instead of pushing controls off screen */
-@media (max-width: 1180px) {
+@media (max-width: 1340px) {
   #top { flex-wrap: wrap; gap: 6px 10px; padding: 6px 12px; }
   #top > .progress { display: none; }
   #top > .mode-tabs { order: -1; }

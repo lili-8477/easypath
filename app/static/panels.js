@@ -119,6 +119,7 @@ const Panels = (() => {
     const top = stackTop;
     if (!placed(box)) box.style.top = `${top}px`;
     if (!placed($('#roiTools'))) $('#roiTools').style.top = `${top}px`;
+    if (!placed($('#patchTools'))) $('#patchTools').style.top = `${top}px`;
     if (!placed(opts)) {
       opts.style.top = `${top}px`;
       opts.style.left = `${placed(box) ? 10 : box.offsetLeft + box.offsetWidth + 8}px`;
@@ -190,7 +191,7 @@ const Panels = (() => {
   function showReview() { if (!open.right) toggleSide('right'); }
 
   /* ---------------------------------------------------------- layout menu */
-  const MENU_FLOATS = [['tools', 'Overlay'], ['toolbox', 'Tools', 'segments'], ['roitools', 'Tools', 'rois'], ['legend', 'Legend'], ['map', 'Minimap']];
+  const MENU_FLOATS = [['tools', 'Overlay'], ['toolbox', 'Tools', 'segments'], ['roitools', 'Tools', 'rois'], ['patchtools', 'Tools', 'patches'], ['legend', 'Legend'], ['map', 'Minimap']];
   function renderMenu() {
     const m = $('#layoutMenu');
     const item = (act, on, label, key) => `<button type="button" class="menu-item" data-act="${act}" role="menuitemcheckbox" aria-checked="${on}"><span class="check">${on ? '✓' : ''}</span><span class="spacer">${label}</span>${key ? `<kbd>${key}</kbd>` : ''}</button>`;
@@ -205,6 +206,7 @@ const Panels = (() => {
     applySides(); placeAll();
     if (typeof renderSR === 'function' && SR.data) renderSR();
     if (document.body.dataset.mode === 'rois') roiRender();
+    if (document.body.dataset.mode === 'patches') paRender();
     toast('Layout reset');
   }
   $('#layoutBtn').addEventListener('click', (e) => {

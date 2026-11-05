@@ -28,6 +28,9 @@
     <a href="#rois">Pick ROIs</a>
     <a href="#rois-all" class="sub">See your ROIs</a>
     <a href="#rois-change" class="sub">Change or delete a ROI</a>
+    <a href="#patches">Annotate patches</a>
+    <a href="#patches-done" class="sub">Finish a patch</a>
+    <a href="#patches-change" class="sub">Change a region</a>
     <a href="#layout">Arrange the panels</a>
     <a href="#saved">What is saved when</a>
     <a href="#tags">Label tags</a>
@@ -39,7 +42,7 @@
   <main class="tut-main">
     <h1>Reviewing a slide</h1>
     <p class="lede">The model divides each slide into segments and suggests a tissue label for each one, plus a subtype for the slide. You check those suggestions, correct what is wrong and save.</p>
-    <p>To mark your own regions instead, see <a href="#rois">Pick ROIs</a>. The tabs at the top switch between the two.</p>
+    <p>To mark your own regions instead, see <a href="#rois">Pick ROIs</a>. To annotate square patches for model training, see <a href="#patches">Annotate patches</a>. The tabs at the top switch between them.</p>
     <p class="muted">The screenshots use an artificial test slide, so the tissue looks nothing like H&amp;E.</p>
 
     <h2 id="screen">The screen</h2>
@@ -53,7 +56,7 @@
       <span class="pin" style="left:74.7%;top:39.4%" aria-hidden="true">6</span>
       <span class="pin" style="left:88.6%;top:6.5%" aria-hidden="true">8</span>
       <span class="pin" style="left:75.6%;top:96.3%" aria-hidden="true">7</span>
-      <span class="pin" style="left:23.5%;top:2.9%" aria-hidden="true">9</span>
+      <span class="pin" style="left:26.5%;top:7%" aria-hidden="true">9</span>
     </figure>
     <ol class="legend-list">
       <li><b>Slides.</b> Filter by status, or search by case or patient.</li>
@@ -220,6 +223,54 @@
     <p>Click a ROI on the slide or in the list. Change its labels or comment and press <b>Save changes</b>. <b>Close</b> leaves it as it was.</p>
     <p><b>Delete</b> removes it, and an <b>Undo</b> button stays in the panel until you move on. To change an outline, delete the ROI and draw it again.</p>
 
+    <h2 id="patches">Annotate patches</h2>
+    <p>Use the <b>Patches</b> tab to annotate slides for model training. A grid of square patches lies over the slide, each 512 × 512 pixels at 20×, or 259 µm across. You choose which patches to annotate, and each one is annotated in full: <b>every pixel of a patch should end up in a region</b>. Regions may overlap.</p>
+    <p>As with ROIs, you work in your own workspace, opened by your initials.</p>
+    <aside class="tut-note"><b>Your way of working is recorded.</b> Which patches you pick matters for training, so the app keeps the order you pick them in, how long you stay on each, and each step you take: strokes, labels, undo and where you zoom. Time is counted twice: by the clock, and as active time, which leaves out time with the browser tab hidden or with no input for 2 minutes.</aside>
+    <figure>
+      <img src="tutorial/patch-annotate.webp" width="1275" height="797" loading="lazy" alt="The Patches tab. One square patch is open in the middle of the slide with coloured regions painted on it, and the rest of the slide is dimmed under a grid. The review panel shows how much of the patch is covered, the list of labels and the regions so far.">
+    </figure>
+    <ol class="steps">
+      <li>
+        <h3>Pick a patch</h3>
+        <p>Zoom in until the grid shows. On a large slide it only appears once you are close, so clicking the bare slide takes you there. Then click a patch. It moves to the clear part of the screen, the rest of the slide dims, and the brush is ready.</p>
+      </li>
+      <li>
+        <h3>Draw a region</h3>
+        <table>
+          <thead><tr><th>Tool</th><th>How to draw</th></tr></thead>
+          <tbody>
+            <tr><td><b>Brush</b> <kbd>R</kbd></td><td>Paint over the region, in as many strokes as it takes. <kbd>[</kbd> and <kbd>]</kbd> change the size.</td></tr>
+            <tr><td><b>Polygon</b> <kbd>D</kbd></td><td>Click around the region. To close it, double-click, press <kbd>Enter</kbd> or click the first point.</td></tr>
+            <tr><td><b>Freehand</b> <kbd>L</kbd></td><td>Drag around the region. Releasing closes the shape.</td></tr>
+          </tbody>
+        </table>
+        <p>You can draw past the edge of the patch, which is the easy way to reach the edge exactly. Only what is inside the patch is kept. Scroll still zooms, and holding <kbd>Space</kbd> lets you drag to pan.</p>
+      </li>
+      <li>
+        <h3>Say what it shows</h3>
+        <p>Click a label or press its key. If the region shows two things, choose both: the region turns striped. Your next stroke starts a new region. Regions with the same label join into one.</p>
+      </li>
+      <li>
+        <h3>Cover the rest</h3>
+        <p>The bar in the review panel shows how much is covered. When only one kind of tissue is left, or only glass, press <b>Select what's left</b> <kbd>G</kbd> and choose its label. <b>Background</b> is for glass, and <b>Other / can't tell</b> is for anything else that isn't on the list.</p>
+      </li>
+    </ol>
+    <aside class="tut-note"><b>There is no save button.</b> Your work is saved shortly after each change. A region without a label isn't annotated yet, so it doesn't count as covered, and if you move on it isn't kept. A message tells you when that happens. If the connection drops, the panel says so, keeps trying and saves when it returns.</aside>
+
+    <h3 id="patches-done">Finish a patch</h3>
+    <p>A patch is <b>complete</b> when every pixel is in a region. The server works this out from the masks themselves. On the grid, complete patches are green and partial ones are amber.</p>
+    <p>Press <kbd>Enter</kbd> on a complete patch to go to the next one, or use the arrow keys to go in any direction. You can leave a patch unfinished and come back; it stays amber, and it stays out of the training masks until it is complete. The list in the review panel shows your patches on this slide, and the slide list shows how many are complete on each slide.</p>
+
+    <h3 id="patches-change">Change a region</h3>
+    <ul>
+      <li><b>Undo:</b> <kbd>Z</kbd> undoes the last change in this patch, and <kbd>Shift</kbd>+<kbd>Z</kbd> brings it back.</li>
+      <li><b>Erase</b> <kbd>X</kbd> removes every region under the brush.</li>
+      <li><b>One region only:</b> click it in the list. Now you can change its labels, and the brush adds to it and Erase takes from it alone. Press <kbd>Esc</kbd> when you are done.</li>
+      <li><b>Delete:</b> use the ✕ next to it in the list.</li>
+      <li><b>To see the tissue underneath:</b> press <kbd>H</kbd> to hide the regions, or use the slider below the list.</li>
+    </ul>
+
     <h2 id="layout">Arrange the panels</h2>
     <figure>
       <img src="tutorial/layout.webp" width="1275" height="797" loading="lazy" alt="The app with the slide list folded to a narrow rail on the left and the Layout menu open, listing each panel with a tick and a Reset layout item.">
@@ -250,6 +301,7 @@
     </table>
     <p>Nothing is overwritten. Every action is logged with reviewer and time, a later save replaces an earlier one as the current answer, and the model's original segmentation is kept.</p>
     <p>ROIs have their own <b>Save ROI</b> button, and the same rule applies: each change is a new record, and a deleted ROI is only marked as deleted.</p>
+    <p>Patches save themselves after each change. Each save is a new record holding the whole patch, so earlier versions are kept too.</p>
 
     <h2 id="tags">Label tags</h2>
     <p>The tag at the right of each segment row shows where its label stands.</p>
@@ -274,6 +326,12 @@
       <li><b>My ROIs (GeoJSON):</b> the same ROIs, ready for QuPath.</li>
       <li><b>Every reviewer's ROIs, to compare (CSV):</b> for whoever analyses agreement between experts. Opening it shows you other people's annotations, so leave it until your own are finished.</li>
       <li><b>ROI audit trail (CSV):</b> every change to every ROI, from every reviewer.</li>
+      <li><b>My complete patches, training masks (ZIP):</b> for each complete patch, one black and white 512 × 512 PNG per label, plus a table with the slide and position of each patch, and the labels. Regions may overlap, so one pixel can be set in several masks.</li>
+      <li><b>My patches (CSV):</b> one row per patch, complete or partial, with how much of it each label covers.</li>
+      <li><b>Every reviewer's patches, to compare (CSV):</b> as with ROIs, leave it until your own are finished.</li>
+      <li><b>Patch audit trail (CSV):</b> every save of every patch, without the masks.</li>
+      <li><b>Patch pick order and stay time (CSV):</b> one row for each stay on a patch, from every reviewer: the order, how the patch was reached, clock and active time, and how many of each operation.</li>
+      <li><b>Patch operations (CSV):</b> every step of every reviewer, in order.</li>
     </ul>
 
     <h2 id="limits">Good to know</h2>
@@ -330,6 +388,21 @@
           <tr><td><kbd>Enter</kbd></td><td>Close the polygon, or save the ROI</td></tr>
           <tr><td><kbd>Esc</kbd></td><td>Cancel, one step back</td></tr>
           <tr><td><kbd>↓</kbd> <kbd>↑</kbd> <kbd>F</kbd> <kbd>H</kbd></td><td>Next / previous slide, whole slide, overlay</td></tr>
+        </tbody>
+      </table>
+      <table>
+        <thead><tr><th colspan="2">Patches tab</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>R</kbd> <kbd>D</kbd> <kbd>L</kbd></td><td>Brush / Polygon / Freehand</td></tr>
+          <tr><td><kbd>X</kbd> <kbd>V</kbd></td><td>Erase / Move</td></tr>
+          <tr><td><kbd>[</kbd> <kbd>]</kbd></td><td>Brush or eraser size</td></tr>
+          <tr><td><kbd>1</kbd>…<kbd>9</kbd> <kbd>0</kbd> <kbd>B</kbd> <kbd>U</kbd></td><td>Choose a label, in the order listed</td></tr>
+          <tr><td><kbd>G</kbd></td><td>Select what's left in the patch</td></tr>
+          <tr><td><kbd>←</kbd> <kbd>→</kbd> <kbd>↑</kbd> <kbd>↓</kbd></td><td>Go to the next patch</td></tr>
+          <tr><td><kbd>Enter</kbd></td><td>Close the polygon, finish the region, or go on from a complete patch</td></tr>
+          <tr><td><kbd>H</kbd></td><td>Hide or show the regions</td></tr>
+          <tr><td><kbd>Z</kbd> <kbd>Shift</kbd>+<kbd>Z</kbd></td><td>Undo / Redo in this patch</td></tr>
+          <tr><td><kbd>Esc</kbd></td><td>One step back</td></tr>
         </tbody>
       </table>
     </div>

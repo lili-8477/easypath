@@ -139,6 +139,7 @@ function paint() {
     }
   }
   roiPaint(m, W, H);
+  patchPaint(m, W, H);
 }
 viewer.addHandler('update-viewport', edDraw);
 viewer.addHandler('animation', edDraw);

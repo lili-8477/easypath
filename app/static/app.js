@@ -23,8 +23,9 @@ const TAG = { model: 'model', class: 'from class', slide: 'confirmed', accepted:
 const OVERLAYS = ['all@clusters', 'slide@clusters', 'pred@clusters', 'none'];
 
 const S = { slides: [], sid: null, info: null, heat: 'all@clusters', opacity: 0.45, rev: {} };
-const roiMode = () => document.body.dataset.mode !== 'segments';   // Pick ROIs or All ROIs: rois.js
-const slideDone = (s) => (roiMode() ? roiCount(s.slide_id) > 0 : S.rev[s.slide_id]);
+const roiMode = () => document.body.dataset.mode !== 'segments';   // anything but Segments: rois.js, patches.js
+const patchMode = () => document.body.dataset.mode === 'patches';
+const slideDone = (s) => (patchMode() ? paCount(s.slide_id).all > 0 : roiMode() ? roiCount(s.slide_id) > 0 : S.rev[s.slide_id]);
 const SR = { data: null, form: null, solo: null, pick: new Set(), focus: null, noteOpen: new Set(), noteDraft: {} };
 
 /* ------------------------------------------------------------ api */
@@ -80,9 +81,9 @@ const slideShown = () => {
 function openSlide(sid) {
   return new Promise(async (resolve) => {
     if (S.sid === sid && slideItem()) return resolve();
-    roiFlush();
+    roiFlush(); paClose('opened another slide');
     S.sid = sid; SR.data = null; SR.solo = null; SR.pick = new Set(); SR.focus = null; SR.noteOpen = new Set(); SR.noteDraft = {};
-    edOnSlide(); roiOnSlide();
+    edOnSlide(); roiOnSlide(); patchOnSlide();
     if (S.heat !== 'none' && !OVERLAYS.includes(S.heat)) S.heat = 'all@clusters';
     $('#heatSel').value = S.heat;
     $('#srPanel').className = 'spanel empty'; $('#srPanel').textContent = 'Loading…';
@@ -160,6 +161,12 @@ async function loadSlides() {
 }
 function renderProgress() {
   const n = S.slides.filter(slideDone).length, el = $('#progress');
+  if (patchMode()) {
+    const done = S.slides.reduce((a, s) => a + paCount(s.slide_id).done, 0);
+    el.textContent = `${done} complete ${done === 1 ? 'patch' : 'patches'} on ${n} / ${S.slides.length} slides`;
+    el.title = 'Patches with every pixel annotated, and slides with at least one patch started';
+    return;
+  }
   el.textContent = roiMode() ? `${n} / ${S.slides.length} slides have ROIs` : `${n} / ${S.slides.length} slides reviewed`;
   el.title = roiMode() ? 'Slides with at least one ROI' : 'Slides with a saved subtype';
 }
@@ -171,11 +178,11 @@ function visibleSlides() {
 function renderSlideList() {
   $('#slideList').innerHTML = visibleSlides().map((s) => {
     const flags = Object.entries(s.qc_flags || {}).filter(([, v]) => v > 0.1).map(([k]) => k.replace('_', ' '));
-    const r = S.rev[s.slide_id], nr = roiMode() ? roiCount(s.slide_id) : 0;
+    const r = S.rev[s.slide_id], nr = roiMode() ? roiCount(s.slide_id) : 0, np = patchMode() ? paCount(s.slide_id) : null;
     return `<li data-sid="${esc(s.slide_id)}" class="${s.slide_id === S.sid ? 'active' : ''}">
       <div class="sl-row"><span class="qc-dot qc-${esc(s.qc_status)}" title="QC ${esc(s.qc_status)}${flags.length ? ': ' + esc(flags.join(', ')) : ''}"></span>
         <span class="sl-name">${esc(s.patient)}</span>
-        ${roiMode() ? (nr ? `<span class="lchip done">${nr} ${nr === 1 ? 'ROI' : 'ROIs'}</span>` : '') : r ? `<span class="lchip done" title="${esc(r.reviewer)} · ${esc((r.ts || '').slice(0, 10))}">${esc(slab(r.subtype))}${r.patterns ? ' · ' + esc(r.patterns.split(',').map(slab).join(', ')) : ''}</span>` : ''}</div>
+        ${np ? (np.all ? `<span class="lchip done" title="${np.done} complete, ${np.part} partial">${np.done} / ${np.all} patches</span>` : '') : roiMode() ? (nr ? `<span class="lchip done">${nr} ${nr === 1 ? 'ROI' : 'ROIs'}</span>` : '') : r ? `<span class="lchip done" title="${esc(r.reviewer)} · ${esc((r.ts || '').slice(0, 10))}">${esc(slab(r.subtype))}${r.patterns ? ' · ' + esc(r.patterns.split(',').map(slab).join(', ')) : ''}</span>` : ''}</div>
       <div class="sl-meta">${esc(s.cohort)} · ${esc(s.slide_id.replace(/^(MSK|LUND|Utah)_/, ''))}${s.histology ? ' · ' + esc(s.histology) : ''}</div></li>`;
   }).join('');
 }
@@ -471,19 +478,20 @@ document.addEventListener('keydown', (e) => {
     $('#help').classList.add('hidden');
     document.querySelectorAll('.modal:not(#help)').forEach((m) => m.remove());
     if (typing) document.activeElement.blur();
+    else if (patchMode()) patchEscape();
     else if (roiMode()) roiEscape();
     else edEscape();
     return;
   }
   // always taken here: the browser's own undo would reach back into the initials box and empty it
-  if (!typing && (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); if (!roiMode()) edUndoRedo(e.shiftKey ? 'redo' : 'undo'); return; }
+  if (!typing && (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); if (patchMode()) paUndoRedo(e.shiftKey ? 'redo' : 'undo'); else if (!roiMode()) edUndoRedo(e.shiftKey ? 'redo' : 'undo'); return; }
   if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
   const active = document.activeElement;
   if (active.classList.contains('resizer')) return;   // its arrow keys resize the panel
   // Enter on a control reached by keyboard activates that control, not Save
   if (e.key === 'Enter' && /^(BUTTON|A)$/.test(active.tagName) && active.matches(':focus-visible')) return;
   const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
-  if (roiMode() ? roiKey(e, k) : edKey(e, k)) { e.preventDefault(); e.stopPropagation(); return; }
+  if (patchMode() ? patchKey(e, k) : roiMode() ? roiKey(e, k) : edKey(e, k)) { e.preventDefault(); e.stopPropagation(); return; }
   const acts = {
     m: () => setSubtype('monophasic'), b: () => setSubtype('biphasic'), p: () => setSubtype('poorly_differentiated'),
     n: () => setSubtype('not_ss'), q: () => setSubtype('cannot_assess'),
@@ -517,7 +525,7 @@ async function loadRuns() {
 /* ------------------------------------------------------------ start (once editor.js has loaded too) */
 document.addEventListener('DOMContentLoaded', () => (async () => {
   await loadRuns();
-  await roiLoad();
+  await Promise.all([roiLoad(), patchLoad()]);
   await loadSlides();
   const first = S.slides.find((s) => !slideDone(s)) || S.slides[0];
   if (first) await openSlide(first.slide_id);

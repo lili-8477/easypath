@@ -52,6 +52,31 @@ CREATE TABLE IF NOT EXISTS expert_roi_events (
   labels TEXT,              -- JSON list of label keys, the full set after this event
   comment TEXT);
 CREATE INDEX IF NOT EXISTS expert_roi_events_roi ON expert_roi_events(roi_id);
+CREATE TABLE IF NOT EXISTS patch_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  slide_id TEXT,
+  owner TEXT,               -- the workspace: the reviewer's initials, however they were typed
+  reviewer TEXT, ts TEXT,
+  x INT, y INT, size INT,   -- the corner of the patch and its side, in level-0 pixels
+  mask_size INT,            -- the side of its masks, in mask pixels: smaller than size when annotating below scan magnification
+  status TEXT,              -- complete | partial | empty; the latest row of a patch in a workspace is its current state
+  covered INT,              -- mask pixels in at least one region
+  fractions TEXT,           -- JSON {label: share of the patch}
+  regions TEXT,             -- JSON [{labels, counts}], run-length encoded masks, the whole patch after this save
+  comment TEXT);
+CREATE INDEX IF NOT EXISTS patch_events_cell ON patch_events(owner, slide_id, x, y, size);
+CREATE TABLE IF NOT EXISTS patch_activity (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  session TEXT, seq INT,    -- one load of the page, and the order within it; a repeated send is ignored
+  owner TEXT, reviewer TEXT,
+  client_ms INT,            -- when it happened, by the reviewer's clock
+  received_ts TEXT,
+  visit TEXT,               -- one stay on a patch, from opening it to leaving it
+  type TEXT,                -- open | close | tick | brush | erase | polygon | freehand | label | undo | ... | view | slide | mode
+  slide_id TEXT, x INT, y INT,
+  detail TEXT,              -- JSON
+  UNIQUE (session, seq));
+CREATE INDEX IF NOT EXISTS patch_activity_owner ON patch_activity(owner, client_ms);
 """
 LATEST = """SELECT r.* FROM reviews r JOIN (SELECT roi_id, MAX(id) AS mid FROM reviews GROUP BY roi_id) l
             ON r.id = l.mid"""

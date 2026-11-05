@@ -14,6 +14,7 @@
     <button type="button" role="tab" data-mode="segments" title="Review the model's segmentation and the slide subtype">Segments</button>
     <button type="button" role="tab" data-mode="rois" title="Draw your own ROIs on a slide and say what they show">Pick ROIs</button>
     <button type="button" role="tab" data-mode="all" title="See the ROIs you have picked, on all slides">My ROIs <span id="roiCount"></span></button>
+    <button type="button" role="tab" data-mode="patches" title="Annotate square patches of the grid, every pixel, for model training">Patches <span id="patchCount"></span></button>
   </div>
   <select id="segRun" class="run-select" aria-label="Segmentation run" title="Segmentation run being reviewed (switches the app for everyone)"></select>
   <div id="slideTitle" class="slide-title">Select a slide</div>
@@ -31,6 +32,13 @@
       <a id="exportMyGeo" href="#" download>My ROIs (GeoJSON, QuPath)</a>
       <a href="api/export/expert_rois.csv" download>Every reviewer's ROIs, to compare (CSV)</a>
       <a href="api/export/expert_rois_audit.csv" download>ROI audit trail, every change (CSV)</a>
+      <div class="tool-sep"></div>
+      <a id="exportMyMasks" href="#" download>My complete patches, training masks (ZIP)</a>
+      <a id="exportMyPatches" href="#" download>My patches, one row each (CSV)</a>
+      <a href="api/export/patches.csv" download>Every reviewer's patches, to compare (CSV)</a>
+      <a href="api/export/patches_audit.csv" download>Patch audit trail, every save (CSV)</a>
+      <a href="api/export/patch_visits.csv" download>Patch pick order and stay time, every reviewer (CSV)</a>
+      <a href="api/export/patch_activity.csv" download>Patch operations, every step of every reviewer (CSV)</a>
     </div>
   </div>
   <div class="menu">
@@ -81,6 +89,7 @@
       </div></div>
       <div id="toolbox" class="toolbox fp" data-fp="toolbox" data-title="Tools"><div id="toolboxBody" class="fp-body" role="toolbar" aria-label="Segmentation tools"></div></div>
       <div id="roiTools" class="toolbox fp" data-fp="roitools" data-title="Tools"><div id="roiToolsBody" class="fp-body" role="toolbar" aria-label="ROI tools"></div></div>
+      <div id="patchTools" class="toolbox fp" data-fp="patchtools" data-title="Tools"><div id="patchToolsBody" class="fp-body" role="toolbar" aria-label="Patch tools"></div></div>
       <div id="toolOpts" class="tool-opts fp hidden" data-fp="opts" data-title="Tool options"><div class="fp-body">
         <label id="edTargetWrap">Add to <select id="edTarget" aria-label="Segment to add to"></select></label>
         <label id="edSizeWrap">Size <input id="edSize" type="range" min="20" max="2000" step="10" aria-label="Brush size"> <span id="edSizeVal" class="tabnum"></span></label>
@@ -102,6 +111,7 @@
     </div>
     <div id="srPanel" class="spanel empty">Select a slide.</div>
     <div id="rpPanel" class="spanel empty">Select a slide.</div>
+    <div id="paPanel" class="spanel empty">Select a slide.</div>
   </aside>
 </main>
 
@@ -144,6 +154,17 @@
       <div><kbd>1</kbd>…<kbd>9</kbd> <kbd>0</kbd> Choose a label</div>
       <div><kbd>Esc</kbd> Cancel, one step back</div>
     </div>
+    <h3 class="kh">Patches tab</h3>
+    <div class="keys">
+      <div><kbd>R</kbd> Brush &nbsp; <kbd>D</kbd> Polygon &nbsp; <kbd>L</kbd> Freehand</div>
+      <div><kbd>X</kbd> Erase &nbsp; <kbd>[</kbd> <kbd>]</kbd> Size &nbsp; <kbd>V</kbd> Move</div>
+      <div><kbd>1</kbd>…<kbd>9</kbd> <kbd>0</kbd> <kbd>B</kbd> <kbd>U</kbd> Choose a label</div>
+      <div><kbd>G</kbd> Select what's left in the patch</div>
+      <div><kbd>←</kbd> <kbd>→</kbd> <kbd>↑</kbd> <kbd>↓</kbd> Go to the next patch</div>
+      <div><kbd>Enter</kbd> Done with the region, or on to the next patch</div>
+      <div><kbd>H</kbd> Hide or show regions &nbsp; <kbd>Z</kbd> Undo</div>
+      <div><kbd>Space</kbd> + drag Pan &nbsp; <kbd>Esc</kbd> One step back</div>
+    </div>
     <p class="muted">Every save and edit is stored with reviewer and time. Later ones supersede earlier ones; nothing is overwritten, and the model's segmentation is kept. New here? Read the <a href="static/tutorial.html" target="_blank" rel="noopener">tutorial</a>.</p>
     <button id="helpClose">Close</button>
   </div>
@@ -153,5 +174,6 @@
 <script src="static/panels.js?v=4"></script>
 <script src="static/editor.js?v=4"></script>
 <script src="static/rois.js?v=4"></script>
+<script src="static/patches.js?v=4"></script>
 </body>
 </html>

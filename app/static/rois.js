@@ -509,7 +509,7 @@ function roiGallery() {
 }
 
 /* ------------------------------------------------------------ modes */
-const HASH = { rois: '#rois', all: '#my-rois' };
+const HASH = { rois: '#rois', all: '#my-rois', patches: '#patches' };
 function swapView(toRoi) {   // ROIs are picked on the plain stain: each mode keeps its own overlay and lines
   const from = toRoi ? Roi.segView : Roi.roiView, to = toRoi ? Roi.roiView : Roi.segView;
   from.heat = S.heat; from.lines = Ed.showLines;
@@ -524,14 +524,15 @@ function paintTabs() {
     b.setAttribute('aria-selected', on);
   });
   const filter = $('#slideFilter');
-  filter.querySelector('[value="todo"]').textContent = roiMode() ? 'No ROIs yet' : 'Not reviewed';
-  filter.querySelector('[value="done"]').textContent = roiMode() ? 'Has ROIs' : 'Reviewed';
+  filter.querySelector('[value="todo"]').textContent = patchMode() ? 'No patches yet' : roiMode() ? 'No ROIs yet' : 'Not reviewed';
+  filter.querySelector('[value="done"]').textContent = patchMode() ? 'Has patches' : roiMode() ? 'Has ROIs' : 'Reviewed';
 }
 function setMode(m) {
   const was = document.body.dataset.mode;
   if (m === was) return;
   if (was === 'rois') { roiFlush(); setRoiTool('move'); }
   if (was === 'segments') setTool('nav');
+  if (was === 'patches') { patchFlush('left the tab'); setPaTool('move'); paLog('mode', { on: false }); }
   document.body.dataset.mode = m;
   try { localStorage.setItem('hss_mode', m); } catch (e) { /* ignore */ }
   history.replaceState(null, '', HASH[m] || location.pathname + location.search);
@@ -543,16 +544,17 @@ function setMode(m) {
   if (m === 'all') Panels.showReview();   // in a narrow window the gallery takes the review panel's place
   if (m === 'rois') roiRender();    // at once, from what is known; the load below brings it up to date
   if (m === 'all') roiGallery();
-  if (m !== 'segments') roiLoad();
+  if (m === 'patches') { paLog('mode', { on: true }); paRender(); patchLoad(); }
+  else if (m !== 'segments') roiLoad();
   edDraw();
 }
 document.querySelectorAll('#modeTabs [data-mode]').forEach((b) => b.addEventListener('click', () => { b.blur(); setMode(b.dataset.mode); }));
 
 /* The first mode: a link can name one (…/#rois), otherwise the one this browser used last. */
 (function startMode() {
-  let m = location.hash === HASH.rois ? 'rois' : location.hash === HASH.all ? 'all' : null;
+  let m = location.hash === HASH.rois ? 'rois' : location.hash === HASH.all ? 'all' : location.hash === HASH.patches ? 'patches' : null;
   try { m = m || localStorage.getItem('hss_mode'); } catch (e) { /* ignore */ }
-  if (m !== 'rois' && m !== 'all') m = 'segments';
+  if (m !== 'rois' && m !== 'all' && m !== 'patches') m = 'segments';
   document.body.dataset.mode = m;
   if (m !== 'segments') {
     S.heat = Roi.roiView.heat; Ed.showLines = Roi.roiView.lines;

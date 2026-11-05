@@ -35,6 +35,7 @@ from ann_common import (ANN, MAP_DIR, NECROSIS_LABELS, PATTERN_LABELS, RES, THUM
 from ann_db import connect, latest_reviews, manual_rois  # noqa: E402
 from clusters import derived_subtypes, router as cluster_router, seg_meta  # noqa: E402
 from expertroi import build_router as expert_roi_router  # noqa: E402
+from patches import build_router as patch_router  # noqa: E402
 from slidereview import router as slide_router  # noqa: E402
 
 STATIC = Path(__file__).parent / "static"
@@ -148,6 +149,7 @@ def dz(sid):
 
 
 app.include_router(expert_roi_router(MAN, lambda sid: dz(sid)[0], patient_label))
+app.include_router(patch_router(MAN, lambda sid: dz(sid)[0], patient_label))
 
 
 @app.get("/")
