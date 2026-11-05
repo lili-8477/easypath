@@ -10,10 +10,6 @@
 <body>
 <header id="top">
   <div class="brand">hSS&nbsp;review</div>
-  <nav class="tabs" aria-label="Review mode">
-    <button data-mode="clusters" title="Label unsupervised token clusters">1 · Clusters</button>
-    <button data-mode="rois" title="Slide viewer, segment labels and subtype">2 · Slides</button>
-  </nav>
   <select id="segRun" class="run-select" aria-label="Segmentation run" title="Segmentation run being reviewed (switches the app for everyone)"></select>
   <div id="slideTitle" class="slide-title">Select a slide</div>
   <div class="spacer"></div>
@@ -27,23 +23,9 @@
       <a href="api/export/cluster_labels.csv" download>Cluster labels audit (CSV)</a>
     </div>
   </div>
+  <a id="tutorialLink" class="ghost-link" href="static/tutorial.html" target="_blank" rel="noopener" title="Opens in a new tab, so unsaved work here stays">Tutorial</a>
   <button id="helpBtn" class="ghost" title="Keyboard shortcuts (?)">?</button>
 </header>
-
-<main id="clusterMain" class="cmain hidden">
-  <aside id="cLeft">
-    <div class="panel-head"><span id="cTitle">Token clusters</span><span id="cProgress" class="muted small"></span></div>
-    <div id="cMeta" class="muted small cmeta"></div>
-    <ul id="cList" class="slide-list"></ul>
-    <div id="cMergeBar" class="mergebar foot"></div>
-  </aside>
-  <section id="cCenter">
-    <div id="cHead" class="chead"></div>
-    <div id="cGallery" class="gallery"></div>
-    <div class="gal-foot"><button id="cMore">Show 24 more examples <kbd>M</kbd></button></div>
-  </section>
-  <aside id="cRight"><div id="cPanel" class="cpanel"></div></aside>
-</main>
 
 <main id="roiMain">
   <aside id="left">
@@ -63,6 +45,7 @@
   <section id="center">
     <div id="viewerWrap">
       <div id="viewer"></div>
+      <canvas id="edCanvas" aria-hidden="true"></canvas>
       <div id="tools" class="tools">
         <label>Overlay
           <select id="heatSel">
@@ -75,7 +58,15 @@
           </select>
         </label>
         <input id="heatOpacity" type="range" min="0" max="1" step="0.05" value="0.45" aria-label="Overlay opacity">
+        <label title="Draw the outline of every segment"><input id="linesChk" type="checkbox" checked> Lines</label>
         <button id="fitBtn" class="tool" title="Whole slide (F)">Fit</button>
+      </div>
+      <div id="toolbox" class="toolbox" role="toolbar" aria-label="Segmentation tools"></div>
+      <div id="toolOpts" class="tool-opts hidden">
+        <label id="edTargetWrap">Add to <select id="edTarget" aria-label="Segment to add to"></select></label>
+        <label id="edSizeWrap">Size <input id="edSize" type="range" min="20" max="2000" step="10" aria-label="Brush size"> <span id="edSizeVal" class="tabnum"></span></label>
+        <span id="edHint" class="tool-hint"></span>
+        <button id="edApply" class="primary hidden">Apply</button>
       </div>
       <div id="legend" class="legend"></div>
     </div>
@@ -89,17 +80,11 @@
 <div id="help" class="modal hidden" role="dialog" aria-label="Keyboard shortcuts">
   <div class="modal-card">
     <h2>Keyboard shortcuts</h2>
-    <h3 class="kh">Clusters</h3>
+    <h3 class="kh">Review</h3>
     <div class="keys">
-      <div><kbd>1</kbd>…<kbd>0</kbd><kbd>-</kbd><kbd>=</kbd><kbd>[</kbd><kbd>]</kbd> Label (keys shown on buttons)</div>
-      <div><kbd>U</kbd> Purity</div>
-      <div><kbd>B</kbd> Batch-driven flag</div>
-      <div><kbd>Enter</kbd> Save, next unlabelled</div>
-      <div><kbd>↑</kbd> <kbd>↓</kbd> Previous / next cluster</div>
-      <div><kbd>M</kbd> More random tokens</div>
-    </div>
-    <h3 class="kh">Slides</h3>
-    <div class="keys">
+      <div><kbd>J</kbd> <kbd>K</kbd> Next / previous segment</div>
+      <div><kbd>A</kbd> Accept label, go to the next</div>
+      <div><kbd>T</kbd> Comment on the selected segment</div>
       <div><kbd>M</kbd> Monophasic &nbsp; <kbd>B</kbd> Biphasic</div>
       <div><kbd>P</kbd> Poorly differentiated</div>
       <div><kbd>N</kbd> Not SS &nbsp; <kbd>Q</kbd> Cannot assess</div>
@@ -109,12 +94,21 @@
       <div><kbd>↓</kbd> <kbd>↑</kbd> Next / previous slide</div>
       <div><kbd>H</kbd> Cycle overlay &nbsp; <kbd>F</kbd> Whole slide</div>
     </div>
-    <p class="muted">Every save is stored with reviewer, time and the model prediction. A later save on the same slide supersedes the earlier one; nothing is overwritten.</p>
+    <h3 class="kh">Segmentation tools</h3>
+    <div class="keys">
+      <div><kbd>V</kbd> Move &nbsp; <kbd>E</kbd> Lines</div>
+      <div><kbd>D</kbd> Polygon &nbsp; <kbd>L</kbd> Lasso</div>
+      <div><kbd>R</kbd> Brush &nbsp; <kbd>X</kbd> Erase &nbsp; <kbd>[</kbd> <kbd>]</kbd> Size</div>
+      <div><kbd>Z</kbd> Undo &nbsp; <kbd>Shift</kbd>+<kbd>Z</kbd> Redo</div>
+      <div><kbd>Space</kbd> + drag Pan while drawing</div>
+      <div><kbd>Esc</kbd> Cancel, then back to Move</div>
+    </div>
+    <p class="muted">Every save and edit is stored with reviewer and time. Later ones supersede earlier ones; nothing is overwritten, and the model's segmentation is kept. New here? Read the <a href="static/tutorial.html" target="_blank" rel="noopener">tutorial</a>.</p>
     <button id="helpClose">Close</button>
   </div>
 </div>
 <div id="toast" class="toast hidden"></div>
 <script src="static/app.js"></script>
-<script src="static/clusters.js"></script>
+<script src="static/editor.js"></script>
 </body>
 </html>

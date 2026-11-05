@@ -8,3 +8,4 @@ pillow==13.0.0
 scipy==1.17.1
 openslide-python>=1.4
 openslide-bin>=4.0
+opencv-python-headless==5.0.0.93

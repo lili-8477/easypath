@@ -1,22 +1,24 @@
 """Slide review: the segments of one slide, a model-predicted label for each (SS pattern or stroma type from
-CONCH zero-shot patch scores averaged over the segment), reviewer labels per segment and the slide-level
-synovial sarcoma subtype. Segment labels given here override the class-level label on that slide only."""
+CONCH zero-shot patch scores averaged over the segment), reviewer labels and comments per segment, reviewer edits
+of the segmentation, and the slide-level synovial sarcoma subtype. Segment labels given here override the
+class-level label on that slide only."""
 import json
+import math
 from datetime import datetime, timezone
-from typing import Dict, List, Optional
+from typing import Dict, List, Literal, Optional
 
 import numpy as np
 import pandas as pd
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response
-from PIL import Image
 from pydantic import BaseModel
 from scipy import ndimage as ndi
 
-from ann_common import ANN, MAP_DIR, SEG_SLIDE_LABELS, SLIDE_PATTERNS, SLIDE_SUBTYPES
+import segedit
+from ann_common import ANN, CLUSTER_COLORS, MAP_DIR, SEG_SLIDE_LABELS, SLIDE_PATTERNS, SLIDE_SUBTYPES
 from ann_db import connect, latest_slide_reviews
-from clusters import (LABEL_COLORS, SEG_MODE, _area, _hex, _load, cl, class_map, effective_labels, group_pick, merges, meta,
-                      read_summary, slide_labels, subtype_call)
+from clusters import (LABEL_COLORS, SEG_MODE, _area, _hex, _load, cl, class_map, edit_state, effective_labels, group_pick,
+                      label_map, merges, meta, read_summary, seg_meta, slide_labels, subtype_call)
 
 TISSUE_TO_LABEL = {"stroma": "stroma", "necrosis": "necrosis", "inflammation": "inflammation",
                    "benign_epithelium": "normal_tissue", "fat": "fat", "muscle": "muscle", "blood": "hemorrhage"}
@@ -52,13 +54,14 @@ def segment_stats(sid):
     if not SEG_MODE or not p.exists() or not (MAP_DIR / f"{sid}_conch.npz").exists():
         raise HTTPException(404, "no segmentation for this slide")
     cmap = class_map(sid)
-    key = (p.stat().st_mtime, (ANN / "tissue_map_ss_prior.json").exists(), tuple(sorted(cmap.items())))
+    active = edit_state(sid)[0]
+    key = (p.stat().st_mtime, (ANN / "tissue_map_ss_prior.json").exists(), tuple(sorted(cmap.items())), tuple(e["id"] for e in active))
     if (p, sid) in _stats and _stats[(p, sid)][0] == key:
         return _stats[(p, sid)][1]
-    lab = np.asarray(Image.open(p))
+    lab = label_map(sid, active)
     m = json.load(open(cl() / "labels" / f"{sid}.json"))
     members = {g["segment"]: g["members"] for g in m.get("groups", [])}
-    K = meta()["k"]
+    K = max(meta()["k"], int(lab[lab != segedit.BACKGROUND].max(initial=0)) + 1)   # reviewer-added segments come after the model's
     S = _load("summary.csv", read_summary).set_index("cluster")
     area = np.bincount(lab[lab != 255].ravel(), minlength=K)[:K] * m["out_um"] ** 2 / 1e6
 
@@ -114,7 +117,8 @@ def segment_stats(sid):
         else:
             bbox = None
         rows.append(dict(segment=rep, classes=c, merged=[x for x in c if x != rep],
-                         color=S.loc[rep, "color"], area_mm2=round(float(area[k]), 4),
+                         color=S.loc[rep, "color"] if rep in S.index else CLUSTER_COLORS[rep % len(CLUSTER_COLORS)],
+                         added=rep >= meta()["k"], area_mm2=round(float(area[k]), 4),
                          frac=round(float(area[k] / tot), 4), pred_label=pred,
                          pred_conf=round(float(tissue[k].max()), 3),
                          tissue={c: round(float(v), 3) for c, v in zip(tcls, tissue[k])},
@@ -149,8 +153,15 @@ def segments(sid: str):
     pa = _area_by(rows, "pred_label")
     con = connect()
     hist = [dict(h) for h in con.execute("SELECT * FROM slide_reviews WHERE slide_id=? ORDER BY id DESC", (sid,))]
+    notes = [dict(c) for c in con.execute("SELECT segment, reviewer, ts, comment FROM segment_comments WHERE clustering=? AND slide_id=? ORDER BY id",
+                                          (meta()["id"], sid))]
     con.close()
-    return dict(clustering=meta()["id"], segments=out, review=hist[0] if hist else None, history=hist,
+    for r in out:
+        r["comments"] = [c for c in notes if c["segment"] in r["classes"]]
+    active, undone = edit_state(sid)
+    return dict(clustering=meta()["id"], k=meta()["k"], segments=out,
+                edits=dict(can_undo=bool(active), can_redo=bool(undone),
+                           log=[dict(action=e["action"], segment=e["segment"], reviewer=e["reviewer"], ts=e["ts"]) for e in reversed(active)]), review=hist[0] if hist else None, history=hist,
                 predicted=dict(subtype_call(pa), stroma_frac=round(sum(v for k, v in pa.items()
                                                                        if k.startswith("stroma") or k == "calcification") / max(tot, 1e-9), 3)),
                 derived=subtype_call(_area_by(rows, None, labs)), merges=dict(all_slides=g_all, slide=g_slide),
@@ -176,17 +187,118 @@ def slide_review(sid: str, body: SlideReview):
     if any(v not in SEG_SLIDE_LABELS for v in body.segments.values()):
         raise HTTPException(400, "bad segment label")
     rows = {r["segment"]: r for r in segment_stats(sid)}
-    cur = slide_labels(sid)
+    cur = effective_labels()[1].get(sid, {})   # a label accepted here is recorded even if it matches a class label
     cid, ts, who = meta()["id"], datetime.now(timezone.utc).isoformat(timespec="seconds"), body.reviewer.strip()
     con = connect()
     for k, v in body.segments.items():
-        if k in rows and cur.get(k) != v:
+        if k in rows and any(cur.get(c) != v for c in rows[k]["classes"]):
             for c in rows[k]["classes"]:
                 con.execute("""INSERT INTO slide_seg_reviews (slide_id, segment, reviewer, ts, label, predicted, clustering)
                                VALUES (?,?,?,?,?,?,?)""", (sid, c, who, ts, v, rows[k]["pred_label"], cid))
     pred = subtype_call(_area_by(list(rows.values()), "pred_label"))["call"]
     con.execute("""INSERT INTO slide_reviews (slide_id, reviewer, ts, subtype, patterns, comment, predicted_subtype, clustering)
                    VALUES (?,?,?,?,?,?,?,?)""", (sid, who, ts, body.subtype, ",".join(body.patterns), body.comment or "", pred, cid))
+    con.commit()
+    con.close()
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------- segmentation edits and segment comments
+class SegEdit(BaseModel):
+    reviewer: str
+    action: Literal["paint", "stroke", "reshape", "undo", "redo"]
+    segment: Optional[int] = None    # class to paint; 255 erases; None with paint / stroke starts a new segment
+    geometry: Optional[dict] = None
+
+
+MAX_POINTS = 20000
+
+
+def _points(pts, min_n):
+    ok = isinstance(pts, list) and min_n <= len(pts) <= MAX_POINTS and all(
+        isinstance(p, list) and len(p) == 2 and all(isinstance(v, (int, float)) and math.isfinite(v) for v in p) for p in pts)
+    if not ok:
+        raise HTTPException(400, "bad geometry")
+    return pts
+
+
+def _new_segment(sid, active):
+    """A free id for a segment added on this slide: after the model's classes and earlier additions."""
+    used = [e["segment"] for e in active if e["segment"] != segedit.BACKGROUND] + [meta()["k"] - 1]
+    k = max(used) + 1
+    if k >= segedit.BACKGROUND:
+        raise HTTPException(400, "too many segments on this slide")
+    return k
+
+
+@router.post("/api/slides/{sid}/edits")
+def add_edit(sid: str, body: SegEdit):
+    if seg_meta(sid) is None:
+        raise HTTPException(404, "no segmentation for this slide")
+    who = body.reviewer.strip()
+    if not who:
+        raise HTTPException(400, "reviewer required")
+    active, undone = edit_state(sid)
+    target, seg, geom = None, body.segment, None
+    if body.action in ("undo", "redo"):
+        pool = active if body.action == "undo" else undone
+        if not pool:
+            raise HTTPException(409, f"nothing to {body.action}")
+        target, seg = pool[-1]["id"], pool[-1]["segment"]
+    else:
+        g = body.geometry or {}
+        if body.action == "paint":
+            polys = g.get("polygons")
+            if not isinstance(polys, list) or not polys:
+                raise HTTPException(400, "bad geometry")
+            geom = dict(polygons=[_points(r, 3) for r in polys])
+        elif body.action == "stroke":
+            w = g.get("width")
+            if not isinstance(w, (int, float)) or not 0 < w < 1e6:
+                raise HTTPException(400, "bad brush width")
+            geom = dict(points=_points(g.get("points"), 1), width=w)
+        else:
+            cls = g.get("classes")
+            if seg is None or not isinstance(cls, list) or not cls or not all(isinstance(c, int) and 0 <= c < segedit.BACKGROUND for c in cls):
+                raise HTTPException(400, "bad geometry")
+            geom = dict(old=_points(g.get("old"), 3), new=_points(g.get("new"), 3), classes=cls)
+        if seg is None:
+            seg = _new_segment(sid, active + undone)
+        if not 0 <= seg <= segedit.BACKGROUND:
+            raise HTTPException(400, "bad segment")
+    con = connect()
+    cur = con.execute("""INSERT INTO seg_edits (clustering, slide_id, reviewer, ts, action, segment, target, geometry)
+                         VALUES (?,?,?,?,?,?,?,?)""", (meta()["id"], sid, who, datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                                                       body.action, seg, target, json.dumps(geom) if geom else None))
+    con.commit()
+    eid = cur.lastrowid
+    con.close()
+    return {"ok": True, "id": eid, "segment": seg}
+
+
+@router.get("/api/slides/{sid}/outlines")
+def segment_outlines(sid: str):
+    if seg_meta(sid) is None:
+        raise HTTPException(404, "no segmentation for this slide")
+    return segedit.outlines(label_map(sid), seg_meta(sid), class_map(sid))
+
+
+class SegComment(BaseModel):
+    reviewer: str
+    segment: int
+    comment: str
+
+
+@router.post("/api/slides/{sid}/segment_comments")
+def add_segment_comment(sid: str, body: SegComment):
+    if seg_meta(sid) is None:
+        raise HTTPException(404, "no segmentation for this slide")
+    who, text = body.reviewer.strip(), body.comment.strip()
+    if not who or not text:
+        raise HTTPException(400, "reviewer and comment required")
+    con = connect()
+    con.execute("INSERT INTO segment_comments (clustering, slide_id, segment, reviewer, ts, comment) VALUES (?,?,?,?,?,?)",
+                (meta()["id"], sid, body.segment, who, datetime.now(timezone.utc).isoformat(timespec="seconds"), text))
     con.commit()
     con.close()
     return {"ok": True}
@@ -206,9 +318,13 @@ def export_slide_reviews():
     a = pd.read_sql_query("SELECT * FROM slide_reviews ORDER BY id", con)
     b = pd.read_sql_query("SELECT * FROM slide_seg_reviews ORDER BY id", con)
     c = pd.read_sql_query("SELECT * FROM merge_states ORDER BY id", con).rename(columns={"scope": "slide_id"})
+    d = pd.read_sql_query("SELECT * FROM seg_edits ORDER BY id", con)
+    e = pd.read_sql_query("SELECT * FROM segment_comments ORDER BY id", con)
     con.close()
     a.insert(0, "record", "slide")
     b.insert(0, "record", "segment")
     c.insert(0, "record", "merge")
-    return Response(pd.concat([a, b, c], ignore_index=True).to_csv(index=False), media_type="text/csv",
+    d.insert(0, "record", "segmentation_edit")
+    e.insert(0, "record", "segment_comment")
+    return Response(pd.concat([a, b, c, d, e], ignore_index=True).to_csv(index=False), media_type="text/csv",
                     headers={"Content-Disposition": "attachment; filename=hss_slide_reviews_audit.csv"})

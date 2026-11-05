@@ -2,8 +2,7 @@
 
 Model proposes, pathologist decides, decisions retrain the model.
 
-Step 1 of review is segment-level: self-supervised smooth segmentation (s1, s2) gives 16 segment classes that are named once each (tab "1 · Clusters"; it shows the segmentation when results/annot/seg exists, otherwise the c1 token clusters),
-then ROIs are reviewed on the slides (tab "2 · Slides & ROIs").
+Review is slide by slide: self-supervised smooth segmentation (s1, s2) gives the segments, and the pathologist corrects their labels and calls the subtype on each slide.
 
 ```
 H&E slide -> QC + tissue mask -> tissue probability map -> candidate ROIs (about 1 mm2)
@@ -71,21 +70,19 @@ The token is in `~/.hss_annot_token` (mode 600); the first visit sets a cookie. 
 - No supervised segmentation model exists for SS here. Once enough ROIs are reviewed, the decisions are the training set for one (patch-level labels can be taken from ROI decisions).
 - ROIs are a fixed 4 x 4 patch grid; pathologists can add rectangles for missed areas. These get an embedding at the next refinement.
 
-## Cluster review (step 1)
+## Class-level labels (no longer in the UI)
 
-- Each cluster: 16 typical tokens (nearest the centroid, at most 3 per slide) and 8 random ones, shown as a white box inside 4x its size of surrounding tissue; more random tokens on demand; click opens the slide there with that cluster overlaid.
-- Labels: tumor, stroma, necrosis, inflammation, benign epithelium, fat, muscle, blood, artifact, mixed, other; tumour pattern; purity (clean / mostly / mixed); "driven by one slide or stain batch" flag. Stored append-only in `cluster_reviews`, keyed by clustering id so a new clustering never inherits old labels.
-- "batch?" marks clusters where one slide holds > 40 % of the tokens or one cohort is enriched > 1.8x.
+The clusters tab, which named each segment class once across all slides, was removed from the app. Its endpoints and the `cluster_reviews` table still exist. Labels already saved there keep applying for their run (tagged "from class" on a slide) until a reviewer overrides them per slide; the audit stays available under Export.
 
-## Self-supervised segmentation (step 1, current)
+## Self-supervised segmentation
 
 - Labels: SS spindle cell, SS glandular, SS corded / solid epithelial, SS round cell (poorly differentiated), stroma, necrosis, inflammation, hemorrhage, fat, muscle, vessel, other normal tissue, artifact, mixed.
 - Slide-level subtype is derived, not segmented: biphasic if glandular + corded >= 5 % of labelled tumour area, otherwise monophasic; poorly differentiated flag if round cell >= 20 % (`BIPHASIC_MIN_EPI`, `PD_MIN_ROUND` in ann_common.py). Shown in the slide header and the segment panel.
 - Export: `api/export/segments.geojson?slide=<id>` gives the polygons with the reviewed label as QuPath classification.
 
-## Slide review (slides tab)
+## Slide review
 
-The slides tab shows the slide with the smooth segmentation overlay only; ROI squares, the ROI filmstrip and the
+The app shows the slide with the smooth segmentation overlay only; ROI squares, the ROI filmstrip and the
 256 um patch heatmaps were removed from the view (the ROI tables and endpoints still exist).
 
 - Overlay: segments coloured per class, labels saved on this slide, or model-predicted labels. Click a segment
@@ -98,6 +95,16 @@ The slides tab shows the slide with the smooth segmentation overlay only; ROI sq
   corded) and a label per segment. Segment labels saved here override the class-level label on that slide only.
   Tables slide_reviews and slide_seg_reviews, append-only; export: Slide reviews audit (CSV).
 
+## Reviewing and editing a segmentation
+
+Reviewers have a step-by-step guide in the app: the Tutorial link in the header opens `app/static/tutorial.html`.
+
+- Review: click a region or press J / K to select a segment; A accepts its label and moves on; T comments. Saving a slide confirms only the checked segments. Unchecked ones stay model suggestions and are not written to `slide_seg_reviews`. Comments are stored at once in `segment_comments`.
+- Tools on the viewer: Lines (move an outline), Polygon, Lasso, Brush, Erase, Undo, Redo. Tools add to a chosen segment or start a new one. A new segment exists on its slide only, with an id from the run's k upward, shown as N1, N2.
+- The model's `labels/<slide>.png` is never changed. Each edit is a row in `seg_edits` (append-only, level-0 coordinates, undo and redo are rows too), and the current map is the model's map with the edits in force replayed (`app/segedit.py`). Overlay, areas, model labels, derived subtype and the GeoJSON export all read that map.
+- Moving a line: area gained is taken from whatever was there, and area given up goes to the nearest other segment or to background, so neighbours stay in contact. Undo is per slide, not per reviewer.
+- Model labels are recomputed over the edited shape from the same CONCH patch scores (512 px patches), so they are coarse for small shapes. Encoder features are not recomputed.
+
 ## Encoders and per-slide K (s1 / s2)
 
 `s1_dense_features.py` takes `ENCODER=conch15|hoptimus0|hoptimus1|uni2h|uni|virchow2` (CONCH v1.5, H-optimus-0, H-optimus-1, UNI2-h, UNI, Virchow2). CONCH v1.5
@@ -107,7 +114,7 @@ are gated on Hugging Face; the account whose token is in `~/.cache/huggingface` 
 `s2_segment.py` fits a cohort codebook of `K_MAX` classes (default 10) and then picks the number of segments per
 slide (`ADAPT=1`, default): classes covering < `MIN_FRAC` (1 %) of the slide's tissue are folded into the nearest
 present class, and the two least separable classes on the slide are merged while their separation d' is below
-`D_MIN` (2.0). A merged segment keeps the id of its largest member class, so class labels from tab 1 still apply.
+`D_MIN` (2.0). A merged segment keeps the id of its largest member class, so saved class labels still apply.
 Output goes to `results/annot/seg_<encoder>_kmax<K>/` (`slide_k.csv` lists segments and merges per slide).
 `tools/calib_dprime.py` prints the segments-per-slide distribution for a range of `D_MIN` values.
 

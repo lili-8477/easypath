@@ -1,7 +1,7 @@
 # easypath
 
 Whole-slide H&E segmentation and a pathologist review app. Foundation-model tokens (CONCH v1.5, UNI, UNI2-h,
-H-optimus, Virchow2) are clustered into smooth tissue segments, and a pathologist names, merges and corrects
+H-optimus, Virchow2) are clustered into smooth tissue segments, and a pathologist labels, merges, redraws and comments on
 them in the browser. Every decision is kept in an append-only audit log.
 
 Built for synovial sarcoma (subtypes monophasic, biphasic, poorly differentiated), but the label sets in
@@ -18,6 +18,7 @@ Built for synovial sarcoma (subtypes monophasic, biphasic, poorly differentiated
 | `deploy/chpc/` | SLURM scripts for the pipeline and for serving on a cluster node |
 | `tools/` | D' calibration for segment merging, API smoke test |
 | `docs/pipeline.md` | Pipeline steps, review policy and UI details |
+| `app/static/tutorial.html` | Step-by-step guide for reviewers, linked from the app header |
 
 ## Data (not in this repo)
 

@@ -4,6 +4,7 @@ import io
 import json
 import math
 import os
+from collections import OrderedDict
 from datetime import datetime, timezone
 from typing import List, Optional
 
@@ -18,7 +19,8 @@ from pydantic import BaseModel
 from ann_common import (ANN, BIPHASIC_MIN_EPI, CLUSTER_COLORS, CLUSTER_LABELS, CLUSTER_PURITY, MAP_DIR, PATTERN_LABELS,
                         PD_MIN_ROUND, RES,
                         SS_COMPONENTS, slide_path)
-from ann_db import connect, latest_cluster_reviews, latest_merges, latest_slide_seg_reviews
+from ann_db import connect, latest_cluster_reviews, latest_merges, latest_slide_seg_reviews, seg_edit_log
+import segedit
 
 
 
@@ -153,7 +155,9 @@ def set_merges(body: MergeBody):
     if body.scope != "*" and body.scope not in MAN.index:
         raise HTTPException(404, "no such slide")
     sel = set(body.classes)
-    if body.action not in ("merge", "unmerge") or not sel or not all(0 <= k < m["k"] for k in sel):
+    # segments a reviewer added exist on one slide only (ids from k up), so they can merge there but not on all slides
+    top = m["k"] if body.scope == "*" else segedit.BACKGROUND
+    if body.action not in ("merge", "unmerge") or not sel or not all(0 <= k < top for k in sel):
         raise HTTPException(400, "bad merge request")
     con = connect()
     cur = latest_merges(con, m["id"], body.scope)
@@ -317,9 +321,50 @@ def seg_meta(sid):
     return json.load(open(p)) if SEG_MODE and p.exists() else None
 
 
+_maps = OrderedDict()   # (run, slide) -> (mtime of the model's map, ids of the edits applied, label map)
+
+
+def edit_state(sid):
+    """(edits in force, undone edits) on this slide in the active run."""
+    con = connect()
+    st = seg_edit_log(con, meta()["id"], sid)
+    con.close()
+    return st
+
+
+def label_map(sid, edits=None):
+    """The slide's current label map: the model's, with the reviewer edits in force. Do not modify the result."""
+    p = cl() / "labels" / f"{sid}.png"
+    active = edit_state(sid)[0] if edits is None else edits
+    ids, key, mtime = [e["id"] for e in active], (_active["dir"], sid), p.stat().st_mtime
+    hit = _maps.get(key)
+    if hit and hit[0] == mtime and hit[1] == ids:
+        _maps.move_to_end(key)
+        return hit[2]
+    resume = hit is not None and hit[0] == mtime and ids[:len(hit[1])] == hit[1]   # usually one new edit on top
+    if resume:
+        lab = segedit.replay(None, seg_meta(sid), active[len(hit[1]):], start=hit[2])
+    else:
+        lab = segedit.replay(np.asarray(Image.open(p)), seg_meta(sid), active)
+    _maps[key] = (mtime, ids, lab)
+    _maps.move_to_end(key)
+    while len(_maps) > 8:
+        _maps.popitem(last=False)
+    return lab
+
+
+def edited_slides():
+    con = connect()
+    rows = con.execute("SELECT DISTINCT slide_id FROM seg_edits WHERE clustering = ?", (meta()["id"],)).fetchall()
+    con.close()
+    return {r["slide_id"] for r in rows}
+
+
 def _area(sid=None):
     """Area (mm2) per segment class on one slide, else over the cohort."""
     if sid is not None:
+        if edit_state(sid)[0]:
+            return segedit.areas_mm2(label_map(sid), seg_meta(sid))
         A = _load("area_mm2.csv", lambda p: pd.read_csv(p, index_col=0))
         if A is not None and sid in A.index:
             return {int(k): float(v) for k, v in A.loc[sid].items()}
@@ -408,8 +453,9 @@ def slide_labels(sid, glob=None, over=None):
 def _mode_colors(mode, K, sid=None):
     """Colour per segment class for the overlay: all / labels (class level) / slide (labels on this slide,
     per-slide overrides first) / pred (model-predicted label per segment) / single class."""
-    S = _load("summary.csv", read_summary)
-    pal = {int(r.cluster): tuple(int(r.color[i:i + 2], 16) for i in (1, 3, 5)) for r in S.itertuples()}
+    # the same colour rule as read_summary, for model classes and reviewer-added segments alike
+    pal = {k: tuple(int(c[i:i + 2], 16) for i in (1, 3, 5))
+           for k, c in ((k, CLUSTER_COLORS[k % len(CLUSTER_COLORS)]) for k in range(segedit.BACKGROUND))}
     cmap = class_map(sid) if SEG_MODE else {}
     lut = np.zeros((256, 4), np.uint8)
     if mode == "all":   # a merged group in its representative's colour
@@ -448,7 +494,7 @@ def segmap(sid, mode):
     p = cl() / "labels" / f"{sid}.png"
     if not p.exists():
         raise HTTPException(404)
-    lab = np.asarray(Image.open(p))
+    lab = label_map(sid)
     rgba = _mode_colors(mode, meta()["k"], sid)[lab]
     buf = io.BytesIO()
     Image.fromarray(rgba, "RGBA").save(buf, "png")
@@ -472,15 +518,16 @@ def derived_subtypes():
         return {}
     A = pd.read_csv(cl() / "area_mm2.csv", index_col=0)
     glob, over = effective_labels()
+    edited = edited_slides()
     out = {}
     for sid in A.index:
         labs = slide_labels(sid, glob, over)
+        ka = _area(sid) if sid in edited else {int(k): float(v) for k, v in A.loc[sid].items()}
         area = {}
         for k, v in labs.items():
-            if str(k) in A.columns:
-                area[v] = area.get(v, 0) + float(A.loc[sid, str(k)])
-        out[sid] = dict(**subtype_call(area), labelled_frac=round(float(
-            A.loc[sid, [str(k) for k in labs if str(k) in A.columns]].sum() / max(A.loc[sid].sum(), 1e-9)), 3))
+            area[v] = area.get(v, 0) + ka.get(int(k), 0)
+        out[sid] = dict(**subtype_call(area), labelled_frac=round(
+            sum(ka.get(int(k), 0) for k in labs) / max(sum(ka.values()), 1e-9), 3))
     return out
 
 
@@ -495,7 +542,10 @@ def export_segments(slide: str):
     p = cl() / "geojson" / f"{slide}.geojson"
     if not SEG_MODE or not p.exists():
         raise HTTPException(404)
-    g = json.load(open(p))
+    if edit_state(slide)[0]:
+        g = {"type": "FeatureCollection", "features": segedit.geojson_features(label_map(slide), seg_meta(slide), slide)}
+    else:
+        g = json.load(open(p))
     labs = slide_labels(slide)
     for f in g["features"]:
         k = f["properties"]["segment"]

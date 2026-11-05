@@ -1,5 +1,5 @@
-/* hSS review, slides view: whole-slide viewer with the self-supervised segmentation overlay, a model-predicted
-   label per segment (SS pattern or stroma type) and the reviewer's segment labels and slide subtype. */
+/* hSS review: whole-slide viewer with the self-supervised segmentation overlay, a model-predicted label per segment
+   (SS pattern or stroma type), and the reviewer's segment labels, comments and slide subtype. Editing tools: editor.js. */
 'use strict';
 
 const $ = (s) => document.querySelector(s);
@@ -10,17 +10,20 @@ const SLAB = {
   cannot_assess: 'Cannot assess', glandular: 'Glandular', corded: 'Corded', stroma: 'Stroma, fibrous',
   stroma_hyalinized: 'Stroma, hyalinized', stroma_myxoid: 'Stroma, myxoid', calcification: 'Calcification',
   spindle: 'spindle', round_cell: 'round cell', fibrous: 'fibrous', hyalinized: 'hyalinized', myxoid: 'myxoid', calcified: 'calcified',
+  ss_spindle: 'SS spindle cell', ss_glandular: 'SS glandular', ss_corded: 'SS corded / solid epithelial', ss_round_cell: 'SS round cell (PD)',
+  necrosis: 'Necrosis', inflammation: 'Inflammation', hemorrhage: 'Hemorrhage', fat: 'Fat', muscle: 'Muscle', vessel: 'Vessel',
+  normal_tissue: 'Other normal tissue', artifact: 'Artifact', mixed: 'Mixed',
+  tumor: 'Tumor', benign_epithelium: 'Benign epithelium', blood: 'Blood / hemorrhage', other: 'Other',   // labels from earlier class-level review
 };
-const slab = (k) => SLAB[k] ?? (typeof clab === 'function' ? clab(k) : k);
+const slab = (k) => SLAB[k] ?? k ?? '';
+const cname = (k) => (SR.data && k >= SR.data.k ? 'N' + (k - SR.data.k + 1) : 'S' + k);
 const SUBTYPE_KEY = { monophasic: 'M', biphasic: 'B', poorly_differentiated: 'P', not_ss: 'N', cannot_assess: 'Q' };
 const PATTERN_KEY = { glandular: 'G', corded: 'C' };
-const TAG = { model: 'model', class: 'from class', slide: 'confirmed', edited: 'edited' };
+const TAG = { model: 'model', class: 'from class', slide: 'confirmed', accepted: 'accepted', edited: 'changed' };
 const OVERLAYS = ['all@clusters', 'slide@clusters', 'pred@clusters', 'none'];
 
-let MODE = 'rois';   // 'clusters' | 'rois' (slides view), switched by clusters.js
-
 const S = { slides: [], sid: null, info: null, heat: 'all@clusters', opacity: 0.45, rev: {} };
-const SR = { data: null, form: null, solo: null, pick: new Set() };
+const SR = { data: null, form: null, solo: null, pick: new Set(), focus: null, noteOpen: new Set(), noteDraft: {} };
 
 /* ------------------------------------------------------------ api */
 async function api(path, opt) {
@@ -63,8 +66,8 @@ const imgRect = (r) => slideItem().imageToViewportRectangle(r.x, r.y, r.w, r.h);
 function openSlide(sid) {
   return new Promise(async (resolve) => {
     if (S.sid === sid && slideItem()) return resolve();
-    S.sid = sid; SR.data = null; SR.solo = null; SR.pick = new Set();
-    S.openedHidden = !$('#viewer').clientWidth;
+    S.sid = sid; SR.data = null; SR.solo = null; SR.pick = new Set(); SR.focus = null; SR.noteOpen = new Set(); SR.noteDraft = {};
+    edOnSlide();
     if (S.heat !== 'none' && !OVERLAYS.includes(S.heat)) S.heat = 'all@clusters';
     $('#heatSel').value = S.heat;
     $('#srPanel').className = 'spanel empty'; $('#srPanel').textContent = 'Loading…';
@@ -75,22 +78,29 @@ function openSlide(sid) {
     $('#exportSlide').href = `api/export/segments.geojson?slide=${encodeURIComponent(sid)}`;
     viewer.addOnceHandler('open', () => { setHeat(); resolve(); });
     viewer.open(`dzi/${encodeURIComponent(sid)}.dzi`);
-    loadSegments(sid);
+    loadSegments(sid); edLoadOutlines();
   });
 }
 
 let heatGen = 0;   // overlay requests finish out of order; only the latest may stay on the viewer
 function setHeat() {
   const gen = ++heatGen;
-  while (viewer.world.getItemCount() > 1) viewer.world.removeItem(viewer.world.getItemAt(1));
+  const clearOverlays = (keep) => {
+    for (let i = viewer.world.getItemCount() - 1; i >= 1; i--) {
+      const it = viewer.world.getItemAt(i);
+      if (it !== keep) viewer.world.removeItem(it);
+    }
+  };
   const seg = S.info && S.info.seg;
-  if (S.heat === 'none' || !seg || !slideItem()) { $('#legend').classList.add('hidden'); return; }
+  if (S.heat === 'none' || !seg || !slideItem()) { clearOverlays(); $('#legend').classList.add('hidden'); return; }
   const cls = S.heat.split('@')[0];
   const url = `api/slides/${encodeURIComponent(S.sid)}/clustermap/${cls}.png?t=${Date.now()}`;
   viewer.addTiledImage({
     tileSource: { type: 'image', url }, opacity: S.opacity,
     x: seg.x0 / S.info.width, y: seg.y0 / S.info.width, width: (seg.w * seg.px_l0) / S.info.width,
-    success: (e) => { if (gen !== heatGen) { e.item.setOpacity(0); setTimeout(() => viewer.world.removeItem(e.item)); } },
+    success: (e) => {   // the previous overlay stays until this one is ready, so an edit does not make the map flash
+      if (gen !== heatGen) { e.item.setOpacity(0); setTimeout(() => viewer.world.removeItem(e.item)); } else clearOverlays(e.item);
+    },
   });
   refreshLegend();
 }
@@ -103,17 +113,15 @@ function refreshLegend() {
 }
 
 function clusterLegend(cls) {
+  if (!SR.data) return '';
   const sw = (c, t) => `<span><i style="background:${esc(c)}"></i>${esc(t)}</span>`;
   if (cls === 'slide' || cls === 'pred') {
-    if (!SR.data) return '';
     const used = [...new Set(SR.data.segments.map((s) => (cls === 'pred' ? s.pred_label : s.label)).filter(Boolean))];
     return `<span>${cls === 'pred' ? 'Model-predicted' : 'Saved'} labels:</span>` +
       (used.length ? used.map((l) => sw(SR.data.label_colors[l] || '#000', slab(l))).join('') : '<span>none saved yet</span>');
   }
-  if (typeof C === 'undefined' || !C.data) return '';
-  const here = SR.data ? new Set(SR.data.segments.map((s) => s.segment)) : null;
-  const cs = C.data.clusters.filter((c) => (cls === 'all' ? !here || here.has(c.cluster) : String(c.cluster) === cls));
-  return '<span>Segments:</span>' + cs.map((c) => sw(c.color, cname(c.cluster))).join('');
+  const segs = SR.data.segments.filter((s) => cls === 'all' || String(s.segment) === cls);
+  return '<span>Segments:</span>' + segs.map((s) => sw(s.color, cname(s.segment))).join('');
 }
 
 function setOverlay(v) {
@@ -175,28 +183,42 @@ function renderSlideTitle() {
 }
 
 /* ------------------------------------------------------------ slide review panel */
-async function loadSegments(sid) {
+async function loadSegments(sid, keepForm) {
   let d;
   try { d = await api(`api/slides/${encodeURIComponent(sid)}/segments`); } catch (e) {
     if (S.sid !== sid) return;
     $('#srPanel').className = 'spanel empty'; $('#srPanel').textContent = 'No segmentation for this slide.';
+    edSync();
     return;
   }
   if (S.sid !== sid) return;
+  const old = keepForm && SR.data ? { data: SR.data, form: SR.form } : null;
   SR.data = d;
   const rv = d.review;
   SR.form = {
     subtype: rv ? rv.subtype : null, comment: '',
     patterns: new Set(rv && rv.patterns ? rv.patterns.split(',').filter(Boolean) : []),
     labels: Object.fromEntries(d.segments.map((s) => [s.segment, s.label || s.pred_label])),
+    checked: new Set(d.segments.filter((s) => s.slide_label).map((s) => s.segment)),
   };
-  renderSR(); refreshLegend();
+  if (old) {   // an edit or merge reloads the segments: unsaved decisions on this slide carry over
+    Object.assign(SR.form, { subtype: old.form.subtype, comment: old.form.comment, patterns: old.form.patterns });
+    for (const s of d.segments) {
+      const was = old.data.segments.find((x) => x.segment === s.segment);
+      if (!was) continue;
+      if (old.form.labels[s.segment] !== (was.label || was.pred_label)) SR.form.labels[s.segment] = old.form.labels[s.segment];
+      if (old.form.checked.has(s.segment)) SR.form.checked.add(s.segment);
+    }
+  }
+  renderSR(); refreshLegend(); edSync(); edDraw();
 }
 
 function tagOf(s) {
   const f = SR.form.labels[s.segment];
   if (f !== (s.label || s.pred_label)) return 'edited';
-  return s.slide_label ? 'slide' : s.class_label ? 'class' : 'model';
+  if (s.slide_label) return 'slide';
+  if (SR.form.checked.has(s.segment)) return 'accepted';
+  return s.class_label ? 'class' : 'model';
 }
 
 function scoreLine(rel) {
@@ -209,6 +231,8 @@ function renderSR() {
   p.className = 'spanel';
   const opts = (sel) => d.labels.map((l) => `<option value="${l}" ${l === sel ? 'selected' : ''}>${esc(slab(l))}</option>`).join('');
   const segs = [...d.segments].sort((a, b) => b.area_mm2 - a.area_mm2);
+  const nChecked = segs.filter((s) => f.checked.has(s.segment)).length, nOpen = segs.length - nChecked;
+  const when = (ts) => esc((ts || '').replace('T', ' ').slice(0, 16));
   p.innerHTML = `
     <div class="sec first"><h3>Synovial sarcoma subtype</h3>
       ${S.info && S.info.histology ? `<div class="small muted">Clinical histology: <b class="txt">${esc(S.info.histology)}</b></div>` : ''}
@@ -218,29 +242,57 @@ function renderSR() {
       <div class="seg"><span class="seg-lab">Patterns</span>
         ${d.patterns.map((t) => `<button data-pt="${t}" class="${f.patterns.has(t) ? 'on' : ''}">${esc(slab(t))} <kbd>${PATTERN_KEY[t]}</kbd></button>`).join('')}</div>
     </div>
-    <div class="sec"><h3>Segments on this slide (${segs.length})</h3>
-      <div class="small muted note">Model label: CONCH zero-shot scores averaged over the segment; SS pattern and stroma type
-        are called relative to the cohort baseline. Model stroma: ${pct(pr.stroma_frac)} of tissue.${d.patterns_ready ? '' : ' Corded and stroma types are still being computed.'}</div>
-      <div class="mergebar"><span class="small muted">${SR.pick.size ? `${SR.pick.size} selected` : 'Tick segments to merge'}</span>
-        <button data-merge="slide" ${SR.pick.size < 2 ? 'disabled' : ''} title="Merge into one segment on this slide">Merge on this slide</button>
-        <button data-merge="all" ${SR.pick.size < 2 ? 'disabled' : ''} title="Merge these classes on every slide of this run">Merge on all slides</button></div>
+    <div class="sec"><div class="sec-head"><h3>Segments on this slide</h3><span class="small ${nOpen ? 'muted' : 'allchecked'}">${nChecked} of ${segs.length} checked</span>
+        ${nOpen ? `<button class="mini" id="srAcceptAll" title="Accept the label shown on every segment not yet checked">Accept all</button>` : ''}</div>
+      <div class="small muted note" title="Model label: CONCH zero-shot scores averaged over the segment; SS pattern and stroma type are called relative to the cohort baseline.">Model stroma: ${pct(pr.stroma_frac)} of tissue.${d.patterns_ready ? '' : ' Corded and stroma types are still being computed.'}</div>
+      <div class="mergebar"><span class="small muted">${SR.pick.size ? `${SR.pick.size} ticked` : 'Tick segments to merge them'}</span>
+        ${SR.pick.size >= 2 ? `<button data-merge="slide" title="Merge into one segment on this slide">On this slide</button>
+        <button data-merge="all" ${segs.some((s) => SR.pick.has(s.segment) && s.added) ? 'disabled title="A segment added by a reviewer exists on this slide only"' : 'title="Merge these classes on every slide of this run"'}>On all slides</button>` : ''}</div>
       ${segs.map((s, i) => `
-        <div class="srow ${SR.solo === s.segment ? 'solo' : ''}" data-k="${s.segment}">
+        <div class="srow ${SR.solo === s.segment ? 'solo' : ''} ${SR.focus === s.segment ? 'focus' : ''}" data-k="${s.segment}">
           <button class="sw" style="background:${esc(s.color)}" title="Show only this segment (${i + 1}); again for all"></button>
-          <div class="sinfo"><label class="pick" title="Select to merge"><input type="checkbox" data-pick="${s.segment}" ${SR.pick.has(s.segment) ? 'checked' : ''}><b>${cname(s.segment)}</b></label>${s.merged.length ? ` <span class="mchip" title="Merged by a reviewer ${s.merge_scope === 'slide' ? 'on this slide' : 'on all slides'}">+ ${s.merged.map(cname).join(', ')}${s.merge_scope === 'slide' ? '' : ' · all slides'} <button class="linkbtn" data-unmerge="${s.segment}">unmerge</button></span>` : ''}${autoMerged(s).length ? ` <span class="muted small" title="Classes the model could not separate on this slide">(auto ${autoMerged(s).map(cname).join(', ')})</span>` : ''} <span class="muted">${pct(s.frac)} · ${s.area_mm2.toFixed(2)} mm²</span>
+          <div class="sinfo"><label class="pick" title="Select to merge"><input type="checkbox" data-pick="${s.segment}" ${SR.pick.has(s.segment) ? 'checked' : ''}><b>${cname(s.segment)}</b></label>${s.added ? ' <span class="mchip">added by reviewer</span>' : ''}${s.merged.length ? ` <span class="mchip" title="Merged by a reviewer ${s.merge_scope === 'slide' ? 'on this slide' : 'on all slides'}">+ ${s.merged.map(cname).join(', ')}${s.merge_scope === 'slide' ? '' : ' · all slides'} <button class="linkbtn" data-unmerge="${s.segment}">unmerge</button></span>` : ''}${autoMerged(s).length ? ` <span class="muted small" title="Classes the model could not separate on this slide">(auto ${autoMerged(s).map(cname).join(', ')})</span>` : ''} <span class="muted">${pct(s.frac)} · ${s.area_mm2.toFixed(2)} mm²</span>
             <div class="small muted">Model: <span class="txt">${esc(slab(s.pred_label))}</span> ${pct(s.pred_conf)}${s.pattern || s.stroma ? ` <span title="Share of cohort-relative score">(${scoreLine(s.pattern || s.stroma)})</span>` : ''}</div></div>
           <button class="ghost zoom" title="Zoom to the largest piece" ${s.bbox ? '' : 'disabled'}>⌖</button>
           <select data-k="${s.segment}" aria-label="Label for ${cname(s.segment)}">${opts(f.labels[s.segment])}</select>
-          <span class="tag t-${tagOf(s)}">${TAG[tagOf(s)]}</span>
+          <div class="sact">
+            <button class="mini ${f.checked.has(s.segment) ? 'on' : ''}" data-accept="${s.segment}" title="Label checked (A)">${f.checked.has(s.segment) ? '✓ Checked' : 'Accept'}</button>
+            <button class="mini" data-note="${s.segment}" title="Comment on this segment (T)">Comment${s.comments.length ? ` (${s.comments.length})` : ''}</button>
+            <span class="spacer"></span><span class="tag t-${tagOf(s)}">${TAG[tagOf(s)]}</span>
+          </div>
+          ${SR.noteOpen.has(s.segment) ? `<div class="snotes">
+            ${s.comments.map((c) => `<div class="snote"><span class="muted small">${esc(c.reviewer)} · ${when(c.ts)}</span><div>${esc(c.comment)}</div></div>`).join('')}
+            <textarea data-notein="${s.segment}" placeholder="Comment on ${cname(s.segment)}" aria-label="Comment on ${cname(s.segment)}">${esc(SR.noteDraft[s.segment] || '')}</textarea>
+            <button class="mini" data-notesave="${s.segment}">Add comment</button></div>` : ''}
         </div>`).join('')}
     </div>
-    <textarea id="srComment" placeholder="Comment (optional)">${esc(f.comment)}</textarea>
-    <div class="save-row"><button class="primary" id="srSave">Save slide <kbd>Enter</kbd></button><span class="muted small">Then the next unreviewed slide</span></div>
-    <div class="sec"><h3>History</h3><div class="hist">${d.history.length ? d.history.map((h) => `<div>${esc((h.ts || '').replace('T', ' ').slice(0, 16))} · <b>${esc(h.reviewer)}</b> · ${esc(slab(h.subtype))}${h.patterns ? ' · ' + esc(h.patterns.split(',').map(slab).join(', ')) : ''} <span class="muted">(model: ${esc(h.predicted_subtype)})</span>${h.comment ? `<div class="muted">“${esc(h.comment)}”</div>` : ''}</div>`).join('') : 'Not reviewed yet.'}</div></div>`;
+    <div class="sfoot">
+      <textarea id="srComment" placeholder="Comment on this slide (optional)" aria-label="Comment on this slide">${esc(f.comment)}</textarea>
+      <div class="save-row"><button class="primary" id="srSave">Save slide <kbd>Enter</kbd></button><span class="muted small">${nOpen ? `${nOpen} unchecked ${nOpen === 1 ? 'stays' : 'stay'} as suggested, not confirmed` : 'Then the next unreviewed slide'}</span></div>
+    </div>
+    <div class="sec"><h3>History</h3><div class="hist">${d.history.length ? d.history.map((h) => `<div>${esc((h.ts || '').replace('T', ' ').slice(0, 16))} · <b>${esc(h.reviewer)}</b> · ${esc(slab(h.subtype))}${h.patterns ? ' · ' + esc(h.patterns.split(',').map(slab).join(', ')) : ''} <span class="muted">(model: ${esc(h.predicted_subtype)})</span>${h.comment ? `<div class="muted">“${esc(h.comment)}”</div>` : ''}</div>`).join('') : 'Not reviewed yet.'}</div></div>
+    ${d.edits.log.length ? `<div class="sec"><h3>Segmentation edits in force (${d.edits.log.length})</h3><div class="hist">${d.edits.log.map((e) => `<div>${when(e.ts)} · <b>${esc(e.reviewer)}</b> · ${e.segment === 255 ? 'Erased' : `${EDIT_NAME[e.action] || esc(e.action)} ${cname(e.segment)}`}</div>`).join('')}</div></div>` : ''}`;
 
   p.querySelectorAll('[data-st]').forEach((b) => b.addEventListener('click', () => setSubtype(b.dataset.st)));
   p.querySelectorAll('[data-pt]').forEach((b) => b.addEventListener('click', () => togglePattern(b.dataset.pt)));
-  p.querySelectorAll('select[data-k]').forEach((el) => el.addEventListener('change', () => { f.labels[+el.dataset.k] = el.value; renderSR(); }));
+  p.querySelectorAll('select[data-k]').forEach((el) => el.addEventListener('change', () => {
+    const k = +el.dataset.k;
+    f.labels[k] = el.value; f.checked.add(k); SR.focus = k; renderSR();
+  }));
+  p.querySelectorAll('[data-accept]').forEach((b) => b.addEventListener('click', () => {
+    const k = +b.dataset.accept;
+    if (f.checked.has(k)) f.checked.delete(k); else f.checked.add(k);
+    SR.focus = k; renderSR();
+  }));
+  const all = $('#srAcceptAll');
+  if (all) all.addEventListener('click', () => { segs.forEach((s) => f.checked.add(s.segment)); renderSR(); });
+  p.querySelectorAll('[data-note]').forEach((b) => b.addEventListener('click', () => toggleNote(+b.dataset.note)));
+  p.querySelectorAll('[data-notein]').forEach((el) => el.addEventListener('input', () => { SR.noteDraft[+el.dataset.notein] = el.value; }));
+  p.querySelectorAll('[data-notesave]').forEach((b) => b.addEventListener('click', () => addNote(+b.dataset.notesave)));
+  p.querySelectorAll('.srow').forEach((row) => row.addEventListener('click', (e) => {
+    if (e.target.closest('button, select, input, textarea, label')) return;
+    focusSeg(+row.dataset.k);
+  }));
   p.querySelectorAll('.srow .sw').forEach((b) => b.addEventListener('click', () => solo(+b.closest('.srow').dataset.k)));
   p.querySelectorAll('.srow .zoom').forEach((b) => b.addEventListener('click', () => zoomSeg(+b.closest('.srow').dataset.k)));
   p.querySelectorAll('[data-pick]').forEach((el) => el.addEventListener('change', () => {
@@ -252,9 +304,54 @@ function renderSR() {
   p.querySelectorAll('[data-unmerge]').forEach((b) => b.addEventListener('click', () => unmergeSegment(+b.dataset.unmerge)));
   $('#srComment').addEventListener('input', (e) => { f.comment = e.target.value; });
   $('#srSave').addEventListener('click', saveSR);
+  const fr = p.querySelector('.srow.focus');
+  if (fr) fr.scrollIntoView({ block: 'nearest' });
+}
+
+/* ------------------------------------------------------------ going through the segments */
+const segsByArea = () => [...SR.data.segments].sort((a, b) => b.area_mm2 - a.area_mm2);
+function focusSeg(k, zoom) {
+  SR.focus = k;
+  renderSR(); edDraw();
+  if (zoom) zoomSeg(k);
+}
+function stepSeg(dir) {
+  if (!SR.data) return;
+  const list = segsByArea();
+  if (!list.length) return;
+  const i = list.findIndex((s) => s.segment === SR.focus);
+  const at = i < 0 ? (dir > 0 ? 0 : list.length - 1) : Math.max(0, Math.min(list.length - 1, i + dir));
+  focusSeg(list[at].segment, true);
+}
+function acceptFocus() {   // accept the selected segment (or start at the first open one), then go to the next open one
+  if (!SR.data) return;
+  const list = segsByArea(), f = SR.form;
+  const open = (from) => list.slice(from).concat(list.slice(0, from)).find((s) => !f.checked.has(s.segment));
+  if (SR.focus == null) { const s = open(0); if (s) focusSeg(s.segment, true); return; }
+  f.checked.add(SR.focus);
+  const next = open(list.findIndex((s) => s.segment === SR.focus) + 1);
+  if (next) focusSeg(next.segment, true);
+  else { renderSR(); toast('Every segment checked. Choose the subtype and save.'); }
+}
+function toggleNote(k) {
+  if (SR.noteOpen.has(k)) SR.noteOpen.delete(k); else SR.noteOpen.add(k);
+  SR.focus = k; renderSR();
+  if (SR.noteOpen.has(k)) document.querySelector(`[data-notein="${k}"]`).focus();
+}
+async function addNote(k) {
+  const who = reviewer(), text = (SR.noteDraft[k] || '').trim();
+  if (!who) return;
+  if (!text) { toast('Write the comment first', true); return; }
+  try {
+    await post(`api/slides/${encodeURIComponent(S.sid)}/segment_comments`, { reviewer: who, segment: k, comment: text });
+  } catch (e) { toast('Comment not saved: ' + errDetail(e), true); return; }
+  delete SR.noteDraft[k];
+  await loadSegments(S.sid, true);
+  toast('Comment added');
 }
 
 /* ------------------------------------------------------------ merging */
+const EDIT_NAME = { paint: 'Shape on', stroke: 'Brush on', reshape: 'Outline of' };
 function errDetail(e) {   // "409 {"detail":"..."}" -> the detail text
   const m = /^\d+ (.*)$/s.exec(e.message || '');
   try { return JSON.parse(m[1]).detail || m[1]; } catch (x) { return m ? m[1] : String(e); }
@@ -269,8 +366,7 @@ async function sendMerge(scope, classes, action) {
   } catch (e) { toast((action === 'merge' ? 'Could not merge: ' : 'Could not unmerge: ') + errDetail(e), true); return false; }
   SR.pick = new Set(); SR.solo = null;
   if (S.heat !== 'none' && !OVERLAYS.includes(S.heat)) S.heat = 'all@clusters';
-  if (S.sid) { await loadSegments(S.sid); setOverlay(S.heat); }
-  if (typeof loadClusters === 'function' && typeof C !== 'undefined' && C.data) loadClusters();
+  if (S.sid) { await loadSegments(S.sid, true); await edLoadOutlines(); setOverlay(S.heat); }
   return true;
 }
 async function mergeSegments(where) {
@@ -312,9 +408,11 @@ async function saveSR() {
   if (!who || !SR.data) return;
   if (!SR.form.subtype) { toast('Choose the subtype first (M, B, P, N or Q)', true); return; }
   const sid = S.sid;
+  // only segments the reviewer checked are confirmed; the rest stay as suggestions
+  const labels = Object.fromEntries(Object.entries(SR.form.labels).filter(([k]) => SR.form.checked.has(+k)));
   try {
     await post(`api/slides/${encodeURIComponent(sid)}/slide_review`, {
-      reviewer: who, subtype: SR.form.subtype, patterns: [...SR.form.patterns], segments: SR.form.labels, comment: SR.form.comment,
+      reviewer: who, subtype: SR.form.subtype, patterns: [...SR.form.patterns], segments: labels, comment: SR.form.comment,
     });
   } catch (err) { toast('Not saved: ' + err.message, true); return; }
   toast(`${slab(SR.form.subtype)} · saved`);
@@ -330,8 +428,7 @@ async function saveSR() {
 $('#heatSel').addEventListener('change', (e) => { SR.solo = null; S.heat = e.target.value; setHeat(); if (SR.data) renderSR(); });
 $('#heatOpacity').addEventListener('input', (e) => {
   S.opacity = +e.target.value;
-  const it = viewer.world.getItemAt(1);
-  if (it) it.setOpacity(S.opacity);
+  for (let i = 1; i < viewer.world.getItemCount(); i++) viewer.world.getItemAt(i).setOpacity(S.opacity);
 });
 $('#fitBtn').addEventListener('click', () => viewer.viewport.goHome());
 $('#helpBtn').addEventListener('click', () => $('#help').classList.remove('hidden'));
@@ -346,16 +443,21 @@ document.addEventListener('keydown', (e) => {
     $('#help').classList.add('hidden');
     document.querySelectorAll('.modal:not(#help)').forEach((m) => m.remove());
     if (typing) document.activeElement.blur();
+    else edEscape();
     return;
   }
-  if (MODE !== 'rois' || typing || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (!typing && (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); edUndoRedo(e.shiftKey ? 'redo' : 'undo'); return; }
+  if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
   const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+  if (edKey(e, k)) { e.preventDefault(); e.stopPropagation(); return; }
   const acts = {
     m: () => setSubtype('monophasic'), b: () => setSubtype('biphasic'), p: () => setSubtype('poorly_differentiated'),
     n: () => setSubtype('not_ss'), q: () => setSubtype('cannot_assess'),
     g: () => togglePattern('glandular'), c: () => togglePattern('corded'),
     Enter: saveSR, ArrowDown: () => stepSlide(1), ArrowUp: () => stepSlide(-1),
     f: () => viewer.viewport.goHome(),
+    j: () => stepSeg(1), k: () => stepSeg(-1), a: acceptFocus,
+    t: () => { if (SR.focus != null) { if (!SR.noteOpen.has(SR.focus)) toggleNote(SR.focus); else document.querySelector(`[data-notein="${SR.focus}"]`).focus(); } },
     h: () => { SR.solo = null; setOverlay(OVERLAYS[(OVERLAYS.indexOf(S.heat) + 1) % OVERLAYS.length]); if (SR.data) renderSR(); },
     '?': () => $('#help').classList.remove('hidden'),
   };
@@ -377,11 +479,11 @@ async function loadRuns() {
   });
 }
 
-/* ------------------------------------------------------------ start */
-(async () => {
+/* ------------------------------------------------------------ start (once editor.js has loaded too) */
+document.addEventListener('DOMContentLoaded', () => (async () => {
   await loadRuns();
   await loadSlides();
   const first = S.slides.find((s) => !S.rev[s.slide_id]) || S.slides[0];
   if (first) await openSlide(first.slide_id);
   if (!reviewerInput.value) reviewerInput.focus();
-})().catch((err) => toast('Could not load: ' + err.message, true));
+})().catch((err) => toast('Could not load: ' + err.message, true)));

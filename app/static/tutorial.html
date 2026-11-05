@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>hSS Review Tutorial</title>
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="tutorial.css">
+</head>
+<body class="tut">
+<header class="tut-top">
+  <div class="brand">hSS&nbsp;review</div>
+  <span class="muted">Tutorial</span>
+  <div class="spacer"></div>
+  <a class="tut-back" href="../">Open the review app</a>
+</header>
+
+<div class="tut-layout">
+  <nav class="tut-nav" aria-label="Contents">
+    <a href="#screen">The screen</a>
+    <a href="#review">Review a slide</a>
+    <a href="#fix">Fix the segmentation</a>
+    <a href="#lines" class="sub">Move a boundary</a>
+    <a href="#add" class="sub">Add a region</a>
+    <a href="#erase" class="sub">Remove an area</a>
+    <a href="#merge" class="sub">Merge segments</a>
+    <a href="#undo" class="sub">Undo</a>
+    <a href="#saved">What is saved when</a>
+    <a href="#tags">Label tags</a>
+    <a href="#export">Export</a>
+    <a href="#limits">Good to know</a>
+    <a href="#keys">Keyboard shortcuts</a>
+  </nav>
+
+  <main class="tut-main">
+    <h1>Reviewing a slide</h1>
+    <p class="lede">The model divides each slide into segments and suggests a tissue label for each one, plus a subtype for the slide. You check those suggestions, correct what is wrong and save.</p>
+    <p class="muted">The screenshots use an artificial test slide, so the tissue looks nothing like H&amp;E.</p>
+
+    <h2 id="screen">The screen</h2>
+    <figure class="callouts">
+      <img src="tutorial/overview.webp" width="1520" height="950" alt="The review app with the slide list on the left, the slide and its coloured segments in the middle, and the subtype and segment list on the right.">
+      <span class="pin" style="left:6.3%;top:7.6%" aria-hidden="true">1</span>
+      <span class="pin" style="left:83.9%;top:2.5%" aria-hidden="true">2</span>
+      <span class="pin" style="left:56.5%;top:8.5%" aria-hidden="true">3</span>
+      <span class="pin" style="left:23.5%;top:17.5%" aria-hidden="true">4</span>
+      <span class="pin" style="left:97.6%;top:6.9%" aria-hidden="true">5</span>
+      <span class="pin" style="left:75.9%;top:34.9%" aria-hidden="true">6</span>
+      <span class="pin" style="left:75.7%;top:91.7%" aria-hidden="true">7</span>
+    </figure>
+    <ol class="legend-list">
+      <li><b>Slides.</b> Filter by status, or search by case or patient.</li>
+      <li><b>Reviewer.</b> Your initials. This browser remembers them.</li>
+      <li><b>Overlay.</b> What the colours show, how strong they are, and whether outlines are drawn.</li>
+      <li><b>Toolbox.</b> Tools for changing the segmentation.</li>
+      <li><b>Subtype.</b> The model's suggestion and your call for the slide.</li>
+      <li><b>Segments.</b> Each segment's size, model label, your label and comments, largest first.</li>
+      <li><b>Save slide.</b> Records your subtype and the labels you checked.</li>
+    </ol>
+
+    <h2 id="review">Review a slide</h2>
+    <ol class="steps">
+      <li>
+        <h3>Enter your initials</h3>
+        <p>Every save, edit and comment is recorded under them. The app asks for them if the box is empty.</p>
+      </li>
+      <li>
+        <h3>Open a slide</h3>
+        <p>The first unreviewed slide opens by itself. Otherwise choose one from the list, or press <kbd>↓</kbd> <kbd>↑</kbd>.</p>
+      </li>
+      <li>
+        <h3>Look over the overlay</h3>
+        <p>The <b>Overlay</b> menu switches between colour per segment, the labels on this slide and the model's predicted labels. <kbd>H</kbd> cycles through them and turns the overlay off, so you can see the tissue.</p>
+        <p>To look at one segment alone, click its colour swatch in the list or press its number, <kbd>1</kbd> for the largest. Do the same again to bring the others back.</p>
+      </li>
+      <li>
+        <h3>Check each segment</h3>
+        <p>Press <kbd>J</kbd> for the next segment and <kbd>K</kbd> for the previous one. The viewer zooms to the segment's largest piece. You can also click a region on the slide, which selects it without zooming.</p>
+        <ul>
+          <li><b>The label is right:</b> press <kbd>A</kbd>. It is marked as checked and the next unchecked segment opens. If nothing is selected yet, the first <kbd>A</kbd> only selects a segment.</li>
+          <li><b>The label is wrong:</b> choose another in the segment's menu. That also marks it as checked.</li>
+          <li><b>Every remaining label is right:</b> <b>Accept all</b> checks them together.</li>
+        </ul>
+      </li>
+      <li>
+        <h3>Comment where it helps</h3>
+        <p>Press <kbd>T</kbd> or the segment's <b>Comment</b> button, type, then click <b>Add comment</b>. Press <kbd>Esc</kbd> to leave the box, because shortcuts don't work while you are typing.</p>
+        <figure>
+          <img src="tutorial/comment.webp" class="narrow" width="638" height="488" loading="lazy" alt="A selected segment in the list, marked as checked, with its comment thread open and a box for adding another comment.">
+        </figure>
+      </li>
+      <li>
+        <h3>Correct the outlines if needed</h3>
+        <p>See <a href="#fix">Fix the segmentation</a>. Your labels carry over while you edit.</p>
+      </li>
+      <li>
+        <h3>Choose the subtype</h3>
+        <p>Press <kbd>M</kbd> monophasic, <kbd>B</kbd> biphasic, <kbd>P</kbd> poorly differentiated, <kbd>N</kbd> not SS or <kbd>Q</kbd> cannot assess. <kbd>G</kbd> and <kbd>C</kbd> mark glandular and corded patterns. A slide can't be saved without a subtype.</p>
+      </li>
+      <li>
+        <h3>Save</h3>
+        <p>Press <kbd>Enter</kbd> or <b>Save slide</b>, and the next unreviewed slide opens. Add a slide comment first if you have one.</p>
+        <p>Only checked segments are confirmed. Unchecked ones stay as model suggestions, and the note beside the button says how many.</p>
+      </li>
+    </ol>
+    <aside class="tut-warn"><b>Save before you change slides.</b> Moving to another slide or reloading the page discards unsaved labels, subtype and slide comment. Edits and segment comments are already stored.</aside>
+
+    <h2 id="fix">Fix the segmentation</h2>
+    <p>Pick a tool from the toolbox on the slide. A hint beside it explains the current tool, and you stay in that tool until you choose another.</p>
+    <table>
+      <thead><tr><th>To do this</th><th>Use</th><th>Key</th></tr></thead>
+      <tbody>
+        <tr><td>Pan, zoom and select regions</td><td>Move</td><td><kbd>V</kbd></td></tr>
+        <tr><td>Move a boundary</td><td>Lines</td><td><kbd>E</kbd></td></tr>
+        <tr><td>Outline a region point by point</td><td>Polygon</td><td><kbd>D</kbd></td></tr>
+        <tr><td>Outline a region freehand</td><td>Lasso</td><td><kbd>L</kbd></td></tr>
+        <tr><td>Paint a region, or extend one</td><td>Brush</td><td><kbd>R</kbd></td></tr>
+        <tr><td>Remove an area from the segmentation</td><td>Erase</td><td><kbd>X</kbd></td></tr>
+      </tbody>
+    </table>
+    <p>In any tool, scroll to zoom and hold <kbd>Space</kbd> while dragging to pan. <kbd>Esc</kbd> cancels what you are drawing. Press it again to return to Move.</p>
+
+    <h3 id="lines">Move a boundary</h3>
+    <figure>
+      <img src="tutorial/lines.webp" width="1275" height="765" loading="lazy" alt="A segment outline in edit mode, with white points along it and an Apply button beside the tool hint.">
+    </figure>
+    <ol>
+      <li>Press <kbd>E</kbd> and click the region. Points appear along its outline.</li>
+      <li>Drag a point to move it. Press on a line between points to add a point there and drag it.</li>
+      <li>To delete a point, hold <kbd>Alt</kbd> and click it, or hover over it and press <kbd>Backspace</kbd>.</li>
+      <li>Press <kbd>Enter</kbd> or <b>Apply</b>. <kbd>Esc</kbd> cancels instead.</li>
+    </ol>
+    <p>Neighbours move with the line, so no gap or overlap appears. Area you pull in is taken from whatever was there. Area you give up goes to the nearest other segment, or becomes background if there is none close by.</p>
+
+    <h3 id="add">Add a region</h3>
+    <figure>
+      <img src="tutorial/polygon.webp" width="1275" height="765" loading="lazy" alt="A polygon being drawn on the slide, with the Add to menu and a Close shape button beside the tool hint.">
+    </figure>
+    <ol>
+      <li>Choose <b>Polygon</b>, <b>Lasso</b> or <b>Brush</b>.</li>
+      <li>In <b>Add to</b>, choose <b>New segment</b> or an existing segment.</li>
+      <li>Draw:
+        <ul>
+          <li><b>Polygon:</b> click to place points. To finish, double-click, click the first point again or press <kbd>Enter</kbd>. <kbd>Backspace</kbd> removes the last point.</li>
+          <li><b>Lasso:</b> drag around the region and release.</li>
+          <li><b>Brush:</b> drag to paint. <kbd>[</kbd> and <kbd>]</kbd> change the size.</li>
+        </ul>
+      </li>
+      <li>If you made a new segment, set its label in the list and check it. New segments are named N1, N2 and so on.</li>
+    </ol>
+    <p>A new shape takes over whatever it covers, including parts of other segments.</p>
+    <aside class="tut-note">After you create a new segment, <b>Add to</b> switches to it so you can keep extending it. To start another one, choose <b>New segment</b> again.</aside>
+
+    <h3 id="erase">Remove an area</h3>
+    <p>Press <kbd>X</kbd> and drag across it. The area becomes background and no longer counts toward segment areas or the subtype. Use this for areas that aren't tissue, such as background the model included.</p>
+
+    <h3 id="merge">Merge segments</h3>
+    <p>Tick two or more segments in the list, then choose where the merge applies:</p>
+    <ul>
+      <li><b>On this slide</b> changes this slide only.</li>
+      <li><b>On all slides</b> changes every slide in the current run. Segments you added exist on one slide only, so they can't be merged this way.</li>
+    </ul>
+    <p>To reverse a merge, click <b>unmerge</b> on the merged segment.</p>
+
+    <h3 id="undo">Undo</h3>
+    <p><kbd>Z</kbd> undoes the last edit and <kbd>Shift</kbd>+<kbd>Z</kbd> redoes it. <b>Segmentation edits in force</b>, at the bottom of the right panel, lists what currently applies.</p>
+    <p>Undo works per slide, not per person, so it can undo a colleague's last edit on that slide. It doesn't reverse merges.</p>
+
+    <h2 id="saved">What is saved when</h2>
+    <table>
+      <thead><tr><th>Saved at once</th><th>Saved by Save slide</th></tr></thead>
+      <tbody>
+        <tr><td>Drawing, line and erase edits</td><td>Subtype and patterns</td></tr>
+        <tr><td>Merges and unmerges</td><td>Labels of checked segments</td></tr>
+        <tr><td>Segment comments, once you click Add comment</td><td>Slide comment</td></tr>
+      </tbody>
+    </table>
+    <p>Nothing is overwritten. Every action is logged with reviewer and time, a later save replaces an earlier one as the current answer, and the model's original segmentation is kept.</p>
+
+    <h2 id="tags">Label tags</h2>
+    <p>The tag at the right of each segment row shows where its label stands.</p>
+    <table>
+      <thead><tr><th>Tag</th><th>Meaning</th></tr></thead>
+      <tbody>
+        <tr><td><span class="tag t-model">model</span></td><td>The model's suggestion, not yet checked</td></tr>
+        <tr><td><span class="tag t-class">from class</span></td><td>A label set earlier for this class across slides, not yet checked here</td></tr>
+        <tr><td><span class="tag t-accepted">accepted</span></td><td>Checked as shown, not yet saved</td></tr>
+        <tr><td><span class="tag t-edited">changed</span></td><td>You chose a different label, not yet saved</td></tr>
+        <tr><td><span class="tag t-slide">confirmed</span></td><td>Saved for this slide</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="export">Export</h2>
+    <p>The <b>Export</b> menu at the top right offers:</p>
+    <ul>
+      <li><b>Slide reviews audit (CSV):</b> every save, edit and comment.</li>
+      <li><b>This slide, labelled segments (GeoJSON):</b> the current outlines with their labels, ready for QuPath.</li>
+      <li><b>Cluster labels audit (CSV):</b> class labels saved in earlier versions of the app.</li>
+    </ul>
+
+    <h2 id="limits">Good to know</h2>
+    <ul>
+      <li><b>Model labels on drawn shapes are rough.</b> They come from scores on 512 px patches, so check small shapes by eye.</li>
+      <li><b>Lines edits outer outlines only.</b> To change a hole inside a segment, use Brush or Erase. Very small pieces have no outline, so they can't be clicked; Brush and Erase still work on them.</li>
+      <li><b>Very complex outlines can take a second or so to apply.</b> The hint shows “Saving…” until they finish.</li>
+      <li><b>The run menu at the top left affects everyone.</b> Switching it changes the run for all open sessions, and labels are stored per run, so check with colleagues first.</li>
+    </ul>
+
+    <h2 id="keys">Keyboard shortcuts</h2>
+    <p>Press <kbd>?</kbd> in the app to see these at any time.</p>
+    <div class="key-grid">
+      <table>
+        <thead><tr><th colspan="2">Review</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>J</kbd> <kbd>K</kbd></td><td>Next / previous segment</td></tr>
+          <tr><td><kbd>A</kbd></td><td>Accept label, go to the next</td></tr>
+          <tr><td><kbd>T</kbd></td><td>Comment on the selected segment</td></tr>
+          <tr><td><kbd>M</kbd> <kbd>B</kbd> <kbd>P</kbd> <kbd>N</kbd> <kbd>Q</kbd></td><td>Subtype</td></tr>
+          <tr><td><kbd>G</kbd> <kbd>C</kbd></td><td>Glandular / corded pattern</td></tr>
+          <tr><td><kbd>1</kbd>…<kbd>9</kbd></td><td>Show only that segment</td></tr>
+          <tr><td><kbd>Enter</kbd></td><td>Save, next unreviewed slide</td></tr>
+          <tr><td><kbd>↓</kbd> <kbd>↑</kbd></td><td>Next / previous slide</td></tr>
+          <tr><td><kbd>H</kbd></td><td>Cycle overlay</td></tr>
+          <tr><td><kbd>F</kbd></td><td>Whole slide</td></tr>
+        </tbody>
+      </table>
+      <table>
+        <thead><tr><th colspan="2">Segmentation tools</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>V</kbd></td><td>Move</td></tr>
+          <tr><td><kbd>E</kbd></td><td>Lines</td></tr>
+          <tr><td><kbd>D</kbd></td><td>Polygon</td></tr>
+          <tr><td><kbd>L</kbd></td><td>Lasso</td></tr>
+          <tr><td><kbd>R</kbd></td><td>Brush</td></tr>
+          <tr><td><kbd>X</kbd></td><td>Erase</td></tr>
+          <tr><td><kbd>[</kbd> <kbd>]</kbd></td><td>Brush or eraser size</td></tr>
+          <tr><td><kbd>Z</kbd></td><td>Undo</td></tr>
+          <tr><td><kbd>Shift</kbd>+<kbd>Z</kbd></td><td>Redo</td></tr>
+          <tr><td><kbd>Space</kbd> + drag</td><td>Pan while drawing</td></tr>
+          <tr><td><kbd>Esc</kbd></td><td>Cancel, then back to Move</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </main>
+</div>
+</body>
+</html>

@@ -32,6 +32,17 @@ CREATE TABLE IF NOT EXISTS merge_states (
   clustering TEXT, scope TEXT,   -- scope: '*' = all slides, else a slide_id
   groups TEXT,                   -- JSON list of class lists, the full merge state of this scope after the change
   action TEXT, classes TEXT, reviewer TEXT, ts TEXT);
+CREATE TABLE IF NOT EXISTS seg_edits (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  clustering TEXT, slide_id TEXT, reviewer TEXT, ts TEXT,
+  action TEXT,              -- paint | stroke | reshape | undo | redo
+  segment INT,              -- class painted; 255 = erased to background
+  target INT,               -- undo / redo: the id of the edit concerned
+  geometry TEXT);           -- JSON, level-0 slide pixels
+CREATE INDEX IF NOT EXISTS seg_edits_slide ON seg_edits(clustering, slide_id);
+CREATE TABLE IF NOT EXISTS segment_comments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  clustering TEXT, slide_id TEXT, segment INT, reviewer TEXT, ts TEXT, comment TEXT);
 """
 LATEST = """SELECT r.* FROM reviews r JOIN (SELECT roi_id, MAX(id) AS mid FROM reviews GROUP BY roi_id) l
             ON r.id = l.mid"""
@@ -80,3 +91,19 @@ def latest_merges(con, clustering, scope):
     r = con.execute("SELECT groups FROM merge_states WHERE clustering = ? AND scope = ? ORDER BY id DESC LIMIT 1",
                     (clustering, scope)).fetchone()
     return json.loads(r["groups"]) if r else []
+
+
+def seg_edit_log(con, clustering, slide_id):
+    """Replay a slide's edit log: (edits in force, oldest first; undone edits that can be redone, oldest first)."""
+    active, undone = [], []
+    for r in con.execute("SELECT * FROM seg_edits WHERE clustering = ? AND slide_id = ? ORDER BY id", (clustering, slide_id)):
+        if r["action"] == "undo":
+            undone += [e for e in active if e["id"] == r["target"]]
+            active = [e for e in active if e["id"] != r["target"]]
+        elif r["action"] == "redo":
+            active += [e for e in undone if e["id"] == r["target"]]
+            undone = [e for e in undone if e["id"] != r["target"]]
+        else:
+            active.append(dict(r))
+            undone = []
+    return active, undone
