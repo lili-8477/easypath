@@ -55,11 +55,6 @@ async function roiLoad() {
   } catch (e) { toast('Could not load the ROIs: ' + errDetail(e), true); }
   roiRefresh();
 }
-function roiLinks() {
-  const has = !!Roi.owner;
-  $('#exportMyCsv').classList.toggle('hidden', !has); $('#exportMyGeo').classList.toggle('hidden', !has);
-  if (has) { $('#exportMyCsv').href = mine('csv'); $('#exportMyGeo').href = mine('geojson'); }
-}
 /* New initials open that reviewer's workspace. Whatever is open belongs to the workspace it was drawn in. */
 function roiSetOwner() {
   const next = reviewerInput.value.trim();
@@ -69,7 +64,6 @@ function roiSetOwner() {
     Roi.rois = []; Roi.deleted = null; Roi.hover = null; Roi.filter.label = null; Roi.loaded = false;
   }
   Roi.owner = next;
-  roiLinks();
   roiRefresh();
   roiLoad();
 }
@@ -562,7 +556,6 @@ document.querySelectorAll('#modeTabs [data-mode]').forEach((b) => b.addEventList
     history.replaceState(null, '', HASH[m]);
   }
   paintTabs();
-  roiLinks();
   setRoiTool('move');
   Panels.refresh();
 })();

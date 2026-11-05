@@ -117,12 +117,16 @@ The **Pick ROIs** tab lets an expert outline an area with a polygon, square or o
 - Other exports: `/api/export/expert_rois.geojson` (`?reviewer=`, `?slide=`), `/api/export/expert_rois_audit.csv`.
 - The tab is kept per browser. A link can name it: `…/#rois` or `…/#my-rois`.
 
+## Export menu
+
+The menu has two levels: Individual review (the initials entered) or All reviews, then Complete patches (`patch_masks.zip`) or Operation log (`patch_activity.csv`). The other exports are no longer in the menu but work by URL: `slide_reviews.csv`, `segments.geojson?slide=`, `cluster_labels.csv`, `expert_rois.csv`, `expert_rois.geojson`, `expert_rois_audit.csv`, `patches.csv`, `patches_audit.csv` and `patch_visits.csv`, all under `/api/export/`. The My ROIs tab has its own export buttons.
+
 ## Patch annotation
 
 The **Patches** tab is for model training data: a grid over each slide, annotated patch by patch and pixel by pixel (`app/patches.py`, `app/static/patches.js`).
 
 - Grid: patches of 512 × 512 pixels at 20×. The slides are scanned at 40× (0.2525 µm/pixel), so `PATCH_SIZE` = 1024 level-0 pixels from the slide's top left corner, or 259 µm, with masks of `MASK_SIZE` = 512 at 0.505 µm/pixel. Only whole patches are in the grid; a narrower strip at the right and bottom edges is left out. Patches saved at one size are not listed at another.
-- A patch holds regions drawn with brush, polygon or freehand. Each is a mask with one or more labels. Labels: those of the expert ROIs, plus `background` and `other`, because every pixel has to get one. Regions may overlap, so the annotation is multi-label. Regions with the same label set are one region.
+- A patch holds regions drawn with brush, polygon or freehand. Each is a mask with one or more labels. Labels: those of the expert ROIs, plus `background` and `other`, because every pixel has to get one. Regions may overlap, so the annotation is multi-label. Regions with the same label set are one region. Choosing a label goes to the region waiting for one, or to one opened from the list; otherwise it finishes the last region and goes to everything still uncovered (`label_rest` in the log). Shift adds a second label to the last region.
 - A patch is `complete` when every pixel is in a region, `partial` otherwise, and `empty` once its regions are removed. The server works this out from the masks. A region with no label isn't stored.
 - Each reviewer has a workspace, as with expert ROIs: keyed by initials, which keeps people apart but is not access control.
 - Stored in `patch_events` (append-only). Each save holds the whole patch, with masks run-length encoded in row order as in COCO; the latest row of a patch in a workspace is its current state.
@@ -130,7 +134,7 @@ The **Patches** tab is for model training data: a grid over each slide, annotate
 - `/api/export/patch_masks.zip` (`?reviewer=`, `?include_partial=1`): `manifest.csv`, `labels.json` and `masks/<reviewer>/<slide>/x<X>_y<Y>/<label>.png`, 512 × 512, 1-bit, 255 where the label applies. The image of a patch is `read_region((x, y), 0, (size_l0, size_l0))` resized to `mask_size`, with the numbers in the manifest; the slide files have no level at 20×. Without `?reviewer=` it holds everyone's.
 - `/api/export/patches.csv` has one row per patch with each label's share; without `?reviewer=` it holds everyone's, to compare them. `/api/export/patches_audit.csv` lists every save, without masks. These are available to anyone with the app's link.
 - Experts choose the patches, so how they work is logged in `patch_activity` (append-only): every operation in order, sent in batches, with a repeated batch ignored. A visit runs from opening a patch to leaving it. Each visit has a clock time and an active time, which leaves out time with the browser tab hidden or with no input for 2 minutes. Times use the reviewer's clock. A closing page sends what it has with `sendBeacon`; if the browser crashes, a visit keeps the time of its last tick, at most 15 s old, and its end shows as `no close recorded`.
-- `/api/export/patch_visits.csv` (`?reviewer=`) has one row per visit: `visit_order`, `pick_order` (first visits only), how the patch was reached (`via`), times, coverage and a count of each operation. A patch reached by arrow key or Enter is not a free pick, so `via` separates those from clicks. `/api/export/patch_activity.csv` (`?reviewer=`) has every operation. `patches.csv` includes each patch's pick order and total times. All are available to anyone with the app's link.
+- `/api/export/patch_visits.csv` (`?reviewer=`) has one row per visit: `visit_order`, `pick_order` (first visits only), how the patch was reached (`via`), times, coverage and a count of each operation. A patch reached by arrow key or Enter is not a free pick, so `via` separates those from clicks. `/api/export/patch_activity.csv` (`?reviewer=`) is the operation log: one row per step in order, with `pick_order`, `annotation_order` (the step's place among those that changed this patch's annotation, across visits), the stay's times and the patch's total times. `patches.csv` includes each patch's pick order and total times. All are available to anyone with the app's link.
 - A link can name the tab: `…/#patches`.
 
 ## Layout

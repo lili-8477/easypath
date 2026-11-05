@@ -58,8 +58,11 @@ FIELDS = ["reviewer", "slide_id", "patient", "cohort", "x", "y", "size_l0", "mas
           "coverage", "labels", "comment", "ts"]
 MAX_EVENTS = 1000
 MAX_DETAIL = 2000
-OPERATIONS = ["brush", "erase", "polygon", "freehand", "label", "select_rest", "region_open", "region_close", "region_delete", "discard",
+OPERATIONS = ["brush", "erase", "polygon", "freehand", "label", "label_rest", "select_rest", "region_open", "region_close", "region_delete", "discard",
               "undo", "redo", "comment", "hide", "tool", "zoom_to_patch", "view"]
+ANNOTATING = {"brush", "erase", "polygon", "freehand", "label", "label_rest", "select_rest", "region_delete", "discard", "undo", "redo"}
+LOG_FIELDS = ["reviewer", "session", "step", "time", "operation", "slide_id", "x", "y", "size_l0", "pick_order", "visit_order", "visit_of_patch",
+              "annotation_order", "label", "coverage_after", "via", "stay_active_s", "stay_elapsed_s", "patch_active_s", "patch_elapsed_s", "detail"]
 VISIT_FIELDS = ["reviewer", "session", "visit_order", "pick_order", "visit_of_patch", "slide_id", "x", "y", "size_l0", "via", "started_at",
                 "ended_at", "ended_by", "elapsed_s", "active_s", "coverage_start", "coverage_end", "status_end"] + [f"n_{k}" for k in OPERATIONS]
 
@@ -98,6 +101,11 @@ def _now():
 
 def _iso(ms):
     return datetime.fromtimestamp(ms / 1000, timezone.utc).isoformat(timespec="seconds")
+
+
+def _attachment(base, ext, reviewer=None):
+    who = re.sub(r"[^0-9A-Za-z._-]+", "_", reviewer.strip()) if reviewer is not None else "all"
+    return {"Content-Disposition": f"attachment; filename=hss_{base}_{who}.{ext}"}
 
 
 def _owner(name):
@@ -265,7 +273,7 @@ def build_router(man, open_slide, patient_label):
             opened = next((d for e, d in zip(ev, details) if e["type"] == "open"), {})
             ended = closed[-1] if closed else {}
             covers = [d["covered"] for d in details if "covered" in d]
-            out.append(dict(reviewer=first["reviewer"], session=first["session"], visit_order=seen_visits[owner],
+            out.append(dict(visit_id=vid, owner=owner, reviewer=first["reviewer"], session=first["session"], visit_order=seen_visits[owner],
                             pick_order=picks[owner] if seen_cells[cell] == 1 else "", visit_of_patch=seen_cells[cell], slide_id=first["slide_id"],
                             x=first["x"], y=first["y"], size_l0=PATCH_SIZE, via=opened.get("via", ""), started_at=_iso(first["client_ms"]),
                             ended_at=_iso(ev[-1]["client_ms"]), ended_by=ended.get("reason", "no close recorded"),
@@ -282,12 +290,37 @@ def build_router(man, open_slide, patient_label):
 
     @router.get("/api/export/patch_activity.csv")
     def export_activity(reviewer: Optional[str] = None):
-        """Every operation in the order it happened. One workspace with ?reviewer=."""
-        rows = [dict(reviewer=r["reviewer"], session=r["session"], seq=r["seq"], time=_iso(r["client_ms"]), received=r["received_ts"], visit=r["visit"],
-                     type=r["type"], slide_id=r["slide_id"], x=r["x"], y=r["y"], detail=r["detail"]) for r in activity(reviewer)]
-        cols = ["reviewer", "session", "seq", "time", "received", "visit", "type", "slide_id", "x", "y", "detail"]
-        return Response(pd.DataFrame(rows, columns=cols).to_csv(index=False), media_type="text/csv",
-                        headers={"Content-Disposition": "attachment; filename=hss_patch_activity.csv"})
+        """The operation log: every step of a reviewer in the order it happened, one row each, in one workspace with ?reviewer= or
+        all of them without. On each row: step, that reviewer's running count; pick_order, this patch's place in the order they first
+        went to patches, kept on return visits; annotation_order, the place of this step among the steps that changed the annotation
+        of this patch, carried on across visits; stay_*, the whole stay this step belongs to; patch_*, all stays on this patch."""
+        stays, picks, totals = {}, {}, {}
+        for v in visits(reviewer):
+            cell = (v["owner"], v["slide_id"], v["x"], v["y"])
+            stays[v["visit_id"]] = v
+            if v["pick_order"] != "":
+                picks[cell] = v["pick_order"]
+            t = totals.setdefault(cell, [0.0, 0.0])
+            t[0] += v["active_s"]
+            t[1] += v["elapsed_s"]
+        rows, steps, done = [], Counter(), Counter()
+        for r in activity(reviewer):
+            if r["type"] == "tick":   # only the clock: the time it carries is in the stay columns
+                continue
+            d, v = json.loads(r["detail"]), stays.get(r["visit"])
+            more = dict.fromkeys(("x", "y", "size_l0", "pick_order", "visit_order", "visit_of_patch", "annotation_order", "via", "stay_active_s", "stay_elapsed_s",
+                                  "patch_active_s", "patch_elapsed_s"), "")   # blank outside a patch; missing values would turn the whole column into floats
+            steps[r["owner"]] += 1
+            if v:
+                cell = (r["owner"], r["slide_id"], r["x"], r["y"])
+                if r["type"] in ANNOTATING:
+                    done[cell] += 1
+                more = dict(x=r["x"], y=r["y"], size_l0=PATCH_SIZE, pick_order=picks.get(cell, ""), visit_order=v["visit_order"], visit_of_patch=v["visit_of_patch"],
+                            annotation_order=done[cell] if r["type"] in ANNOTATING else "", via=v["via"], stay_active_s=v["active_s"], stay_elapsed_s=v["elapsed_s"],
+                            patch_active_s=round(totals[cell][0], 1), patch_elapsed_s=round(totals[cell][1], 1))
+            rows.append(dict(reviewer=r["reviewer"], session=r["session"], step=steps[r["owner"]], time=_iso(r["client_ms"]), operation=r["type"], slide_id=r["slide_id"],
+                             label=d.get("key") or ";".join(d.get("labels", [])), coverage_after=d.get("covered", ""), detail=r["detail"], **more))
+        return Response(pd.DataFrame(rows, columns=LOG_FIELDS).to_csv(index=False), media_type="text/csv", headers=_attachment("operation_log", "csv", reviewer))
 
     # ------------------------------------------------------------ exports
     def row(r, **more):
@@ -344,7 +377,7 @@ def build_router(man, open_slide, patient_label):
                     z.writestr(f"{folder}/{k}.png", png.getvalue())
                 out.writerow(row(r, mask_dir=folder))
             z.writestr("manifest.csv", table.getvalue())
-        return Response(buf.getvalue(), media_type="application/zip", headers={"Content-Disposition": "attachment; filename=hss_patch_masks.zip"})
+        return Response(buf.getvalue(), media_type="application/zip", headers=_attachment("complete_patches", "zip", reviewer))
 
     @router.get("/api/export/patches_audit.csv")
     def export_audit():

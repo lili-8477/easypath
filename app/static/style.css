@@ -64,6 +64,8 @@ input:focus, select:focus, textarea:focus, button:focus-visible { outline: 1px s
 .menu-item { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; padding: 7px 10px; background: transparent; border: 0; border-radius: 4px; }
 .menu-item:hover { background: #2c3137; }
 .menu-item .check { width: 12px; color: var(--accent); }
+.menu-pop .exp-note { display: block; margin-top: 1px; font-size: 12px; color: var(--muted); white-space: normal; }
+#exportMenu { min-width: 280px; max-width: 340px; }
 .menu-item kbd { font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: var(--muted); }
 
 /* layout */
@@ -374,6 +376,7 @@ button.danger { color: var(--s-needs); }
 .pa-size input[type="range"], .pa-show input[type="range"] { flex: 1; min-width: 40px; }
 .pa-ask { color: #fff; font-weight: 600; }
 .pa-need { font-size: 12px; color: #ffbe46; }
+.pa-second { margin-top: 6px; }
 .roi-opts.idle .roi-opt { opacity: .55; }
 .parg { display: flex; align-items: center; gap: 4px; margin-bottom: 3px; }
 .parg-main { flex: 1; display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; padding: 5px 8px; text-align: left; background: transparent; }

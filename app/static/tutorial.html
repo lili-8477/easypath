@@ -249,11 +249,11 @@
       </li>
       <li>
         <h3>Say what it shows</h3>
-        <p>Click a label or press its key. If the region shows two things, choose both: the region turns striped. Your next stroke starts a new region. Regions with the same label join into one.</p>
+        <p>Click a label or press its key. Your next stroke starts a new region, and regions with the same label join into one. If a region shows two things, hold <kbd>Shift</kbd> as you choose the second label: the region turns striped. <kbd>Z</kbd> undoes a wrong label.</p>
       </li>
       <li>
         <h3>Cover the rest</h3>
-        <p>The bar in the review panel shows how much is covered. When only one kind of tissue is left, or only glass, press <b>Select what's left</b> <kbd>G</kbd> and choose its label. <b>Background</b> is for glass, and <b>Other / can't tell</b> is for anything else that isn't on the list.</p>
+        <p>The bar in the review panel shows how much is covered. When only one kind of tissue is left, or only glass, just click its label: everything not yet annotated gets it. If the whole patch is one type, press <b>Select whole patch</b> <kbd>G</kbd> first, then choose the label. <b>Background</b> is for glass, and <b>Other / can't tell</b> is for anything else that isn't on the list.</p>
       </li>
     </ol>
     <aside class="tut-note"><b>There is no save button.</b> Your work is saved shortly after each change. A region without a label isn't annotated yet, so it doesn't count as covered, and if you move on it isn't kept. A message tells you when that happens. If the connection drops, the panel says so, keeps trying and saves when it returns.</aside>
@@ -266,7 +266,7 @@
     <ul>
       <li><b>Undo:</b> <kbd>Z</kbd> undoes the last change in this patch, and <kbd>Shift</kbd>+<kbd>Z</kbd> brings it back.</li>
       <li><b>Erase</b> <kbd>X</kbd> removes every region under the brush.</li>
-      <li><b>One region only:</b> click it in the list. Now you can change its labels, and the brush adds to it and Erase takes from it alone. Press <kbd>Esc</kbd> when you are done.</li>
+      <li><b>One region only:</b> click it in the list. Now labels are added to it or removed from it, the brush adds to it, and Erase takes from it alone. Press <kbd>Esc</kbd> when you are done.</li>
       <li><b>Delete:</b> use the ✕ next to it in the list.</li>
       <li><b>To see the tissue underneath:</b> press <kbd>H</kbd> to hide the regions, or use the slider below the list.</li>
     </ul>
@@ -317,22 +317,12 @@
     </table>
 
     <h2 id="export">Export</h2>
-    <p>The <b>Export</b> menu at the top right offers:</p>
+    <p>The <b>Export</b> menu at the top right asks whose work you want: <b>Individual review</b>, for the initials you have entered, or <b>All reviews</b>. Then choose what to download:</p>
     <ul>
-      <li><b>Slide reviews audit (CSV):</b> every save, edit and comment.</li>
-      <li><b>This slide, labelled segments (GeoJSON):</b> the current outlines with their labels, ready for QuPath.</li>
-      <li><b>Cluster labels audit (CSV):</b> class labels saved in earlier versions of the app.</li>
-      <li><b>My ROIs and annotations (CSV):</b> one row per ROI, with its labels, comment, size and outline.</li>
-      <li><b>My ROIs (GeoJSON):</b> the same ROIs, ready for QuPath.</li>
-      <li><b>Every reviewer's ROIs, to compare (CSV):</b> for whoever analyses agreement between experts. Opening it shows you other people's annotations, so leave it until your own are finished.</li>
-      <li><b>ROI audit trail (CSV):</b> every change to every ROI, from every reviewer.</li>
-      <li><b>My complete patches, training masks (ZIP):</b> for each complete patch, one black and white 512 × 512 PNG per label, plus a table with the slide and position of each patch, and the labels. Regions may overlap, so one pixel can be set in several masks.</li>
-      <li><b>My patches (CSV):</b> one row per patch, complete or partial, with how much of it each label covers.</li>
-      <li><b>Every reviewer's patches, to compare (CSV):</b> as with ROIs, leave it until your own are finished.</li>
-      <li><b>Patch audit trail (CSV):</b> every save of every patch, without the masks.</li>
-      <li><b>Patch pick order and stay time (CSV):</b> one row for each stay on a patch, from every reviewer: the order, how the patch was reached, clock and active time, and how many of each operation.</li>
-      <li><b>Patch operations (CSV):</b> every step of every reviewer, in order.</li>
+      <li><b>Complete patches (ZIP):</b> for each fully annotated patch, one black and white 512 × 512 PNG per label, plus a table with the slide and position of each patch, its labels and comment. Regions may overlap, so one pixel can be set in several masks.</li>
+      <li><b>Operation log (CSV):</b> every step in the order it happened, one row each. Each row gives the patch's <b>pick order</b>, the step's <b>annotation order</b> in that patch, and the <b>stay time</b> on the patch, both for that stay and in total, by the clock and as active time.</li>
     </ul>
+    <p>All reviews shows you other people's work, so leave it until your own is finished. Your ROIs have their own export buttons on the <b>My ROIs</b> tab.</p>
 
     <h2 id="limits">Good to know</h2>
     <ul>
@@ -396,7 +386,8 @@
           <tr><td><kbd>R</kbd> <kbd>D</kbd> <kbd>L</kbd></td><td>Brush / Polygon / Freehand</td></tr>
           <tr><td><kbd>X</kbd> <kbd>V</kbd></td><td>Erase / Move</td></tr>
           <tr><td><kbd>[</kbd> <kbd>]</kbd></td><td>Brush or eraser size</td></tr>
-          <tr><td><kbd>1</kbd>…<kbd>9</kbd> <kbd>0</kbd> <kbd>B</kbd> <kbd>U</kbd></td><td>Choose a label, in the order listed</td></tr>
+          <tr><td><kbd>1</kbd>…<kbd>9</kbd> <kbd>0</kbd> <kbd>B</kbd> <kbd>U</kbd></td><td>Choose a label, in the order listed: for the region, or for all that's left</td></tr>
+          <tr><td><kbd>Shift</kbd> + label</td><td>Second label on the last region</td></tr>
           <tr><td><kbd>G</kbd></td><td>Select what's left in the patch</td></tr>
           <tr><td><kbd>←</kbd> <kbd>→</kbd> <kbd>↑</kbd> <kbd>↓</kbd></td><td>Go to the next patch</td></tr>
           <tr><td><kbd>Enter</kbd></td><td>Close the polygon, finish the region, or go on from a complete patch</td></tr>

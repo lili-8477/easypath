@@ -223,12 +223,6 @@ window.addEventListener('pageshow', (e) => { if (e.persisted && Pa.cur && !Pa.cu
 
 /* ------------------------------------------------------------ data */
 const paOwnerKey = (s) => (s || '').trim().toLowerCase();
-const paMine = (kind) => `api/export/${kind}?reviewer=${encodeURIComponent(Pa.owner)}`;
-function paLinks() {
-  const has = !!Pa.owner;
-  ['#exportMyPatches', '#exportMyMasks'].forEach((s) => $(s).classList.toggle('hidden', !has));
-  if (has) { $('#exportMyPatches').href = paMine('patches.csv'); $('#exportMyMasks').href = paMine('patch_masks.zip'); }
-}
 async function patchLoad() {
   const owner = Pa.owner;
   try {
@@ -262,7 +256,6 @@ function patchSetOwner() {
     Pa.bySlide = new Map(); Pa.loaded = false;
   }
   Pa.owner = next;
-  paLinks();
   paRender();
   patchRefresh();
   patchLoad();
@@ -439,6 +432,30 @@ function paToggleLabel(key) {
   paOp('label', { key, on: d.labels.has(key) });
   paRender(); edDraw();
 }
+/* What a click on a label means. A region without a label gets it, and so does one opened from the list, where it is switched on
+   or off. Otherwise the region just drawn is finished, and the label goes to everything not yet annotated. Shift adds it to the
+   region just drawn as a second label. So a label can never land on the last region by accident. */
+function paLabelClick(key, shift) {
+  const c = Pa.cur;
+  if (!c || c.loading) return;
+  const d = Pa.draft && maskAny(Pa.draft.mask) ? Pa.draft : null;
+  if (d && (!d.labels.size || d.opened || shift)) { paToggleLabel(key); return; }
+  if (c.covered === paN()) {
+    toast(d ? 'The whole patch is covered. Shift+click adds a second label to this region.' : 'The whole patch is covered. To change a region, click it in the list.', true);
+    return;
+  }
+  if (c.covered === 0) { toast("Draw a region first. If the patch is all one type, press Select whole patch.", true); return; }
+  pushUndo();
+  commitDraft();
+  const u = unionOf(c.regions), m = new Uint8Array(paN());
+  for (let i = 0; i < m.length; i++) if (!u[i]) m[i] = 1;
+  const share = toGoText(c.covered / paN());
+  Pa.draft = newRegion(m, [key], false);
+  paTouch();
+  paOp('label_rest', { key, area: Math.round((countOn(m) / paN()) * 1e4) / 1e4 });
+  toast(`The remaining ${share} is now ${paLabelText(key)}. Z undoes this.`);
+  paRender(); edDraw();
+}
 function paSelectRest() {
   if (!Pa.cur || Pa.cur.loading) return;
   if (Pa.cur.covered === paN() && !(Pa.draft && !Pa.draft.labels.size)) { toast('The whole patch is covered'); return; }
@@ -513,8 +530,8 @@ function regionRow(r, i) {
       <button type="button" class="mini ghost danger" ${isDraft ? 'data-rg-del-draft' : `data-rg-del="${i}"`} title="Delete this region" aria-label="Delete this region">✕</button></div>`;
 }
 function labelButtons() {
-  const on = Pa.draft ? Pa.draft.labels : new Set(), idle = !Pa.draft;
-  const btn = (l) => `<button type="button" class="roi-opt ${on.has(l.key) ? 'on' : ''}" data-palabel="${esc(l.key)}" aria-pressed="${on.has(l.key)}" ${idle ? 'aria-disabled="true"' : ''}><i style="background:${esc(l.color)}"></i><span>${esc(l.name)}</span><kbd>${paKeyOf(l.key).toUpperCase()}</kbd></button>`;
+  const on = Pa.draft ? Pa.draft.labels : new Set(), c = Pa.cur, idle = !Pa.draft && (c.covered === 0 || c.covered === paN());
+  const btn = (l) => `<button type="button" class="roi-opt ${on.has(l.key) ? 'on' : ''}" data-palabel="${esc(l.key)}" aria-pressed="${on.has(l.key)}"><i style="background:${esc(l.color)}"></i><span>${esc(l.name)}</span><kbd>${paKeyOf(l.key).toUpperCase()}</kbd></button>`;
   const groups = [...new Set(Pa.labels.map((l) => l.group).filter(Boolean))];
   return `<div class="roi-opts ${idle ? 'idle' : ''}">${Pa.labels.filter((l) => !l.group).map(btn).join('')}</div>` +
     groups.map((g) => `<div class="rform-group">${esc(g)}</div><div class="roi-opts two ${idle ? 'idle' : ''}">${Pa.labels.filter((l) => l.group === g).map(btn).join('')}</div>`).join('');
@@ -538,16 +555,23 @@ function paRender() {
   } else if (c.loading) {
     body = '<div class="small muted">Opening the patch…</div>';
   } else {
-    const ask = d ? (d.labels.size ? (d.opened ? 'Change its labels, add to it, or erase from it.' : 'Add a second label if it shows both, or draw the next region.') : 'What does this region show?') : c.covered === paN() ? 'Press Enter for the next patch, or draw on to add to this one.' : 'Draw a region, then choose what it shows.';
+    const left = toGoText(c.covered / paN()), done = c.covered === paN(), open = d && d.opened, fresh = d && d.labels.size && !d.opened;
+    const ask = d && !d.labels.size ? 'What does this region show?'
+      : open ? 'Changing this region. Click labels to add or remove them. Esc when done.'
+      : done ? 'Press Enter for the next patch, or draw on to add to this one.'
+      : c.covered === 0 ? 'Draw a region, then choose what it shows. Is it all one type? Press Select whole patch.'
+      : `Draw the next region, or choose a label for the remaining ${left}.`;
+    const askClass = (d && !d.labels.size) || (!d && c.covered > 0 && !done) || (fresh && !done) ? 'pa-ask' : '';
     body = `<div class="rform-head"><b>${esc(cellName(c.x, c.y))}</b><span class="spacer"></span>
         <button class="ghost zoom" id="paZoom" title="Zoom to this patch">⌖</button><button class="ghost" id="paDone" title="Close this patch (Esc)">Close</button></div>
       <div id="paMeter" class="pa-meter"><i></i></div>
-      <div class="pa-meter-row"><span id="paMeterText"></span><button class="mini" id="paRest" title="Select everything not yet in a region, so it can be labelled (G)">Select what's left <kbd>G</kbd></button></div>
+      <div class="pa-meter-row"><span id="paMeterText"></span><button class="mini" id="paRest" title="Select everything not yet in a region, so it can be labelled (G)">${c.covered === 0 ? 'Select whole patch' : "Select what's left"} <kbd>G</kbd></button></div>
       <div id="paSaved" class="small muted"></div>
       ${Pa.tool === 'move' ? '' : `<div class="pa-hint">${esc(t.hint)}</div>`}
       ${sized ? `<label class="pa-size">Size <input id="paSize" type="range" min="4" max="256" step="2" value="${Pa.brush}" aria-label="Brush size"> <span id="paSizeVal" class="tabnum"></span></label>` : ''}
-      <div class="rform-q ${d && !d.labels.size ? 'pa-ask' : ''}">${esc(ask)}</div>
+      <div class="rform-q ${askClass}">${esc(ask)}</div>
       ${labelButtons()}
+      ${fresh ? '<div class="small muted pa-second">Shows two things? Shift+click adds a second label to the last region.</div>' : ''}
       <div class="rform-group">Regions in this patch</div>
       <div id="paRegions">${(d ? regionRow(d, null) : '') + c.regions.map(regionRow).join('') || '<div class="small muted">None yet.</div>'}</div>
       <label class="pa-show"><input type="checkbox" id="paHide" ${Pa.hide ? '' : 'checked'}> Show regions <kbd>H</kbd> <input id="paAlpha" type="range" min="0.1" max="0.9" step="0.05" value="${Pa.alpha}" aria-label="Opacity of the regions"></label>
@@ -557,7 +581,7 @@ function paRender() {
   p.innerHTML = (c ? `<div class="rform">${body}</div>` : body) + section('palist', 'Your patches on this slide', '<span class="small muted" id="paListCount"></span>', '<div id="paList"></div>');
   p.scrollTop = top;
   p.querySelectorAll('[data-fold]').forEach((b) => b.addEventListener('click', () => { Panels.toggleSec(b.dataset.fold); paRender(); }));
-  p.querySelectorAll('[data-palabel]').forEach((b) => b.addEventListener('click', () => { paToggleLabel(b.dataset.palabel); }));
+  p.querySelectorAll('[data-palabel]').forEach((b) => b.addEventListener('click', (e) => { paLabelClick(b.dataset.palabel, e.shiftKey); }));
   p.querySelectorAll('[data-rg]').forEach((b) => b.addEventListener('click', () => paOpenRegion(+b.dataset.rg)));
   p.querySelectorAll('[data-rg-del]').forEach((b) => b.addEventListener('click', () => paDeleteRegion(+b.dataset.rgDel)));
   const bind = (sel, ev, fn) => { const el = p.querySelector(sel); if (el) el.addEventListener(ev, fn); };
@@ -874,8 +898,8 @@ function patchKey(e, k) {
     edDraw();
     return true;
   }
-  const i = PA_LABEL_KEYS.indexOf(k);
-  if (i >= 0 && Pa.labels[i]) { paToggleLabel(Pa.labels[i].key); return true; }
+  const digit = /^Digit(\d)$/.exec(e.code || ''), i = PA_LABEL_KEYS.indexOf(digit ? digit[1] : k);   // Shift turns 1 into ! on the key itself
+  if (i >= 0 && Pa.labels[i]) { paLabelClick(Pa.labels[i].key, e.shiftKey); return true; }
   const t = Object.keys(PA_TOOLS).find((id) => PA_TOOLS[id].key.toLowerCase() === k);
   if (t) { setPaTool(t); return true; }
   return true;
@@ -892,7 +916,31 @@ function patchEscape() {   // one step back: what is being drawn, the region, th
   if (Pa.cur) patchFlush('closed');
 }
 
+/* ------------------------------------------------------------ export: whose work first, then what */
+function exportMenu(level) {
+  const m = $('#exportMenu');
+  if (!level) {
+    const who = reviewerInput.value.trim();
+    m.innerHTML = `<button type="button" class="menu-item" role="menuitem" data-exp="mine"><span class="spacer">Individual review${who ? ` <span class="muted">(${esc(who)})</span>` : ''}</span><span class="muted">›</span></button>
+      <button type="button" class="menu-item" role="menuitem" data-exp="all"><span class="spacer">All reviews</span><span class="muted">›</span></button>`;
+    return;
+  }
+  const q = level === 'mine' ? `?reviewer=${encodeURIComponent(Pa.owner)}` : '';
+  m.innerHTML = `<button type="button" class="menu-item exp-back" data-exp="" title="Back"><span class="muted">‹</span><span class="spacer">${level === 'mine' ? `Individual review <span class="muted">(${esc(Pa.owner)})</span>` : 'All reviews'}</span></button>
+    <div class="tool-sep"></div>
+    <a href="api/export/patch_masks.zip${q}" download role="menuitem"><b>Complete patches</b> <span class="muted">ZIP</span><span class="exp-note">Training masks of every fully annotated patch</span></a>
+    <a href="api/export/patch_activity.csv${q}" download role="menuitem"><b>Operation log</b> <span class="muted">CSV</span><span class="exp-note">Patch pick order, annotation order in each patch, stay time on each patch</span></a>`;
+}
+$('#exportMenu').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-exp]');
+  if (!b) return;   // a download: the menu closes as usual
+  e.stopPropagation();
+  const level = b.dataset.exp;
+  if (level === 'mine' && !patchWho()) { $('#exportMenu').classList.add('hidden'); return; }
+  exportMenu(level);
+});
+$('#exportBtn').addEventListener('click', () => exportMenu(''));
+
 /* ------------------------------------------------------------ start */
-paLinks();
 setPaTool('move');
 if (modeIs('patches')) paLog('mode', { on: true });

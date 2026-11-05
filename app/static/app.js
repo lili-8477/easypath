@@ -91,7 +91,6 @@ function openSlide(sid) {
     renderSlideTitle(); renderSlideList();
     const li = document.querySelector('#slideList li.active');
     if (li) li.scrollIntoView({ block: 'nearest' });
-    $('#exportSlide').href = `api/export/segments.geojson?slide=${encodeURIComponent(sid)}`;
     viewer.addOnceHandler('open', () => { setHeat(); resolve(); });
     viewer.open(`dzi/${encodeURIComponent(sid)}.dzi`);
     loadSegments(sid); edLoadOutlines();
