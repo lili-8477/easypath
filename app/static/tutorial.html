@@ -240,7 +240,8 @@
         <table>
           <thead><tr><th>Tool</th><th>How to draw</th></tr></thead>
           <tbody>
-            <tr><td><b>Brush</b> <kbd>R</kbd></td><td>Paint over the region, in as many strokes as it takes. <kbd>[</kbd> and <kbd>]</kbd> change the size.</td></tr>
+            <tr><td><b>Brush</b> <kbd>R</kbd></td><td>Paint over the region, in as many strokes as it takes. Change the diameter with <b>−</b> and <b>+</b> under the tools, the slider in the panel, or <kbd>[</kbd> and <kbd>]</kbd>.</td></tr>
+            <tr><td><b>Wand</b> <kbd>W</kbd></td><td>Click in a region with the tip of the wand: it spreads through similar colour nearby. Drag to take in more of the colour you first clicked. Zoom out to select more at once, in for detail. Change the sensitivity with <b>−</b> and <b>+</b> under the tools, or <kbd>[</kbd> and <kbd>]</kbd>. <kbd>Alt</kbd>+drag removes. Works best where the region clearly differs from what surrounds it; where it doesn't, use the brush.</td></tr>
             <tr><td><b>Polygon</b> <kbd>D</kbd></td><td>Click around the region. To close it, double-click, press <kbd>Enter</kbd> or click the first point.</td></tr>
             <tr><td><b>Freehand</b> <kbd>L</kbd></td><td>Drag around the region. Releasing closes the shape.</td></tr>
           </tbody>
@@ -253,6 +254,7 @@
       </li>
       <li>
         <h3>Cover the rest</h3>
+        <p>If no label fits, press <b>Type your own…</b> <kbd>T</kbd>, type the class and press <kbd>Enter</kbd>. It works like any other label and stays on your list under <b>Your own classes</b> for as long as one of your patches uses it. Use the same wording each time, so the class stays one class in the training data.</p>
         <p>The bar in the review panel shows how much is covered. When only one kind of tissue is left, or only glass, just click its label: everything not yet annotated gets it. If the whole patch is one type, press <b>Select whole patch</b> <kbd>G</kbd> first, then choose the label. <b>Background</b> is for glass, and <b>Other / can't tell</b> is for anything else that isn't on the list.</p>
       </li>
     </ol>
@@ -383,10 +385,11 @@
       <table>
         <thead><tr><th colspan="2">Patches tab</th></tr></thead>
         <tbody>
-          <tr><td><kbd>R</kbd> <kbd>D</kbd> <kbd>L</kbd></td><td>Brush / Polygon / Freehand</td></tr>
+          <tr><td><kbd>R</kbd> <kbd>W</kbd> <kbd>D</kbd> <kbd>L</kbd></td><td>Brush / Wand / Polygon / Freehand</td></tr>
           <tr><td><kbd>X</kbd> <kbd>V</kbd></td><td>Erase / Move</td></tr>
-          <tr><td><kbd>[</kbd> <kbd>]</kbd></td><td>Brush or eraser size</td></tr>
+          <tr><td><kbd>[</kbd> <kbd>]</kbd></td><td>Brush or eraser diameter</td></tr>
           <tr><td><kbd>1</kbd>…<kbd>9</kbd> <kbd>0</kbd> <kbd>B</kbd> <kbd>U</kbd></td><td>Choose a label, in the order listed: for the region, or for all that's left</td></tr>
+          <tr><td><kbd>T</kbd></td><td>Type your own class</td></tr>
           <tr><td><kbd>Shift</kbd> + label</td><td>Second label on the last region</td></tr>
           <tr><td><kbd>G</kbd></td><td>Select what's left in the patch</td></tr>
           <tr><td><kbd>←</kbd> <kbd>→</kbd> <kbd>↑</kbd> <kbd>↓</kbd></td><td>Go to the next patch</td></tr>

@@ -147,6 +147,10 @@ aside.folded > .rail:hover { background: var(--panel-2); color: var(--text); }
 .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; box-shadow: 0 0 0 1px rgba(255,255,255,.45); margin-right: 4px; vertical-align: -1px; }
 #edCanvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 3; }
 #viewerWrap:not([data-tool="nav"]):not([data-pan]) #viewer { cursor: crosshair; }
+/* the star at the wand's tip is the point clicked */
+#viewerWrap[data-tool="wand"]:not([data-pan]) #viewer {
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'%3E%3Cpath d='M11 11L28 28' stroke='%23fff' stroke-width='6' stroke-linecap='round'/%3E%3Cpath d='M11 11L28 28' stroke='%23222' stroke-width='3.5' stroke-linecap='round'/%3E%3Cpath d='M7 0.5L8.8 5.2L13.5 7L8.8 8.8L7 13.5L5.2 8.8L0.5 7L5.2 5.2Z' fill='%23ffc61a' stroke='%23222' stroke-width='1.2' stroke-linejoin='round'/%3E%3Cpath d='M21 4L21.8 6.2L24 7L21.8 7.8L21 10L20.2 7.8L18 7L20.2 6.2Z' fill='%23ffc61a' stroke='%23222' stroke-width='.8' stroke-linejoin='round'/%3E%3C/svg%3E") 7 7, crosshair;
+}
 .toolbox { top: 74px; left: 10px; width: 62px; }
 .toolbox .fp-body { display: flex; flex-direction: column; gap: 2px; padding: 4px; }
 .toolbox button {
@@ -156,6 +160,10 @@ aside.folded > .rail:hover { background: var(--panel-2); color: var(--text); }
 .toolbox button:hover:not(:disabled) { color: var(--text); background: var(--panel-2); }
 .toolbox button.on { background: #24384f; border-color: var(--accent); color: #fff; }
 .toolbox .fp-title { letter-spacing: .02em; }
+.pa-dia { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 2px 0 3px; font-size: 11px; color: var(--muted); }
+.pa-dia .tabnum { min-width: 0; color: var(--text); }
+.pa-dia-btns { display: flex; gap: 2px; width: 100%; }
+.toolbox .pa-dia-btns button { flex: 1; padding: 2px 0; font-size: 15px; line-height: 1.1; border-color: var(--line); color: var(--text); }
 .toolbox svg { width: 18px; height: 18px; display: block; }
 .tool-sep { height: 1px; background: var(--line); margin: 3px 2px; }
 .tool-opts { top: 74px; left: 80px; width: fit-content; }
@@ -374,9 +382,15 @@ button.danger { color: var(--s-needs); }
 .pa-hint { margin: 8px 0; padding: 7px 9px; border: 1px solid var(--accent); border-radius: var(--radius); line-height: 1.45; }
 .pa-size, .pa-show { display: flex; align-items: center; gap: 8px; margin: 8px 0; color: var(--muted); }
 .pa-size input[type="range"], .pa-show input[type="range"] { flex: 1; min-width: 40px; }
+#paSizeVal { flex: none; min-width: 14ch; text-align: right; white-space: nowrap; }   /* steady, or the slider moves under the pointer */
 .pa-ask { color: #fff; font-weight: 600; }
 .pa-need { font-size: 12px; color: #ffbe46; }
 .pa-second { margin-top: 6px; }
+.roi-opt.pa-custom-btn { width: 100%; margin-top: 6px; }
+.pa-custom-btn i { border: 1px dashed var(--muted); background: transparent; }
+.pa-custom { display: flex; gap: 6px; margin-top: 6px; }
+.pa-custom input { flex: 1; min-width: 0; }
+.roi-opt span, .rchip { overflow-wrap: anywhere; }
 .roi-opts.idle .roi-opt { opacity: .55; }
 .parg { display: flex; align-items: center; gap: 4px; margin-bottom: 3px; }
 .parg-main { flex: 1; display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; padding: 5px 8px; text-align: left; background: transparent; }

@@ -13,15 +13,21 @@ apart, it does not secure anything.
 Append-only, like the other review tables: every save adds a row to patch_events holding the whole patch, and the latest row
 of a patch in a workspace is its current state. Removing every region is one more row (status "empty").
 
+A reviewer can also type a class of their own. It is stored as "custom:<text>" beside the keys of the fixed list, and a workspace's
+classes are the ones in its patches now, so nothing else has to be kept for them. Free text never becomes a path: its mask file gets
+a safe name of its own, and labels.json says which class that is.
+
 Masks are run-length encoded in row order: counts[0] pixels of 0, then counts[1] pixels of 1, and so on, as in COCO.
 
 Experts choose which patches to annotate, so how they work is part of the data: patch_activity logs every operation in the
 order it happened, and each stay on a patch with its time. Time is kept twice: elapsed is the clock, active leaves out time with
 the browser tab hidden or with no input for 2 minutes."""
 import csv
+import hashlib
 import io
 import json
 import re
+import unicodedata
 import zipfile
 from collections import Counter
 from datetime import datetime, timezone
@@ -53,14 +59,16 @@ PATCH_LABELS = [dict(d, color=COLORS.get(d["key"], d["color"])) for d in ROI_LAB
     dict(key="other", name="Other / can't tell", short="Other", group="Everything else", color="#f4f4f6"),
 ]
 LABEL_KEYS = [d["key"] for d in PATCH_LABELS]
-LABEL_TEXT = {d["key"]: d.get("short", d["name"]) for d in PATCH_LABELS}
+CUSTOM = "custom:"
+MAX_CUSTOM = 40          # characters in a class typed by a reviewer
+MAX_REGION_LABELS = 16
 FIELDS = ["reviewer", "slide_id", "patient", "cohort", "x", "y", "size_l0", "mask_size", "downsample", "mpp_l0", "mpp_patch", "status",
           "coverage", "labels", "comment", "ts"]
 MAX_EVENTS = 1000
 MAX_DETAIL = 2000
-OPERATIONS = ["brush", "erase", "polygon", "freehand", "label", "label_rest", "select_rest", "region_open", "region_close", "region_delete", "discard",
+OPERATIONS = ["brush", "erase", "wand", "polygon", "freehand", "label", "label_rest", "select_rest", "region_open", "region_close", "region_delete", "discard",
               "undo", "redo", "comment", "hide", "tool", "zoom_to_patch", "view"]
-ANNOTATING = {"brush", "erase", "polygon", "freehand", "label", "label_rest", "select_rest", "region_delete", "discard", "undo", "redo"}
+ANNOTATING = {"brush", "erase", "wand", "polygon", "freehand", "label", "label_rest", "select_rest", "region_delete", "discard", "undo", "redo"}
 LOG_FIELDS = ["reviewer", "session", "step", "time", "operation", "slide_id", "x", "y", "size_l0", "pick_order", "visit_order", "visit_of_patch",
               "annotation_order", "label", "coverage_after", "via", "stay_active_s", "stay_elapsed_s", "patch_active_s", "patch_elapsed_s", "detail"]
 VISIT_FIELDS = ["reviewer", "session", "visit_order", "pick_order", "visit_of_patch", "slide_id", "x", "y", "size_l0", "via", "started_at",
@@ -127,6 +135,31 @@ def encode(mask):
     return [0] + runs if flat[0] else runs
 
 
+def custom_key(label):
+    """A typed class in its one stored form, or None if nothing is left of it. ; separates labels in the CSVs, so it cannot be in one."""
+    text = unicodedata.normalize("NFC", label[len(CUSTOM):])
+    text = "".join(c for c in " ".join(text.split()) if unicodedata.category(c)[0] != "C").replace(";", ",")
+    text = text[:MAX_CUSTOM].strip()
+    return CUSTOM + text if text else None
+
+
+def _label(label):
+    return label if label in LABEL_KEYS else custom_key(label) if label.startswith(CUSTOM) else None
+
+
+def _ordered(labels):
+    return [k for k in LABEL_KEYS if k in labels] + sorted((k for k in labels if k not in LABEL_KEYS), key=str.casefold)
+
+
+def mask_name(key):
+    """The file of a label's mask. Spelled differently only by case, a typed class is one file."""
+    if key in LABEL_KEYS:
+        return key
+    text = key[len(CUSTOM):].casefold()
+    slug = re.sub(r"[^0-9a-z]+", "_", text).strip("_")[:24]
+    return "_".join(filter(None, ["custom", slug, hashlib.sha1(text.encode()).hexdigest()[:8]]))
+
+
 def _clean(regions):
     """Checked and in one form: labels in list order, empty regions gone, and regions with the same labels joined.
     Returns (regions as stored, covered pixels, {label: fraction of the patch}), all worked out from the masks."""
@@ -134,14 +167,15 @@ def _clean(regions):
         raise HTTPException(400, "too many regions in this patch")
     joined = {}
     for r in regions:
-        if not r.labels or any(k not in LABEL_KEYS for k in r.labels):
-            raise HTTPException(400, "every region needs a label from the list")
+        labels = {_label(k) for k in r.labels}
+        if not labels or None in labels or len(labels) > MAX_REGION_LABELS:
+            raise HTTPException(400, "every region needs a label from the list, or one typed in")
         try:
             m = decode(r.counts)
         except (ValueError, OverflowError):
             raise HTTPException(400, "bad mask") from None
         if m.any():
-            key = tuple(k for k in LABEL_KEYS if k in r.labels)
+            key = tuple(_ordered(labels))
             joined[key] = joined[key] | m if key in joined else m
     union = np.zeros((MASK_SIZE, MASK_SIZE), bool)
     per = {}
@@ -149,7 +183,7 @@ def _clean(regions):
         union |= m
         for k in keys:
             per[k] = per[k] | m if k in per else m
-    fractions = {k: round(float(per[k].mean()), 4) for k in LABEL_KEYS if k in per}
+    fractions = {k: round(float(per[k].mean()), 4) for k in _ordered(per)}
     stored = [dict(labels=list(keys), counts=encode(m)) for keys, m in joined.items()]
     return stored, int(union.sum()), fractions
 
@@ -195,7 +229,9 @@ def build_router(man, open_slide, patient_label):
     def list_patches(reviewer: str = ""):
         """The patches of one workspace. Without initials there is no workspace, so none."""
         rows = latest(SUMMARY, reviewer, ["complete", "partial"]) if reviewer.strip() else []
-        return dict(size=PATCH_SIZE, mask_size=MASK_SIZE, magnification=MAGNIFICATION, labels=PATCH_LABELS, patches=[_summary(r) for r in rows])
+        patches = [_summary(r) for r in rows]
+        custom = _ordered({k for p in patches for k in p["fractions"] if k not in LABEL_KEYS})
+        return dict(size=PATCH_SIZE, mask_size=MASK_SIZE, magnification=MAGNIFICATION, labels=PATCH_LABELS, custom=custom, patches=patches)
 
     @router.get("/api/patches/{sid}/{x}/{y}")
     def get_patch(sid: str, x: int, y: int, reviewer: str = ""):
@@ -205,6 +241,17 @@ def build_router(man, open_slide, patient_label):
                            ORDER BY id DESC LIMIT 1""", (sid, x, y, PATCH_SIZE, _owner(reviewer))).fetchone() if reviewer.strip() else None
         con.close()
         return dict(regions=json.loads(r["regions"]) if r else [], comment=(r["comment"] or "") if r else "")
+
+    @router.get("/api/patches/{sid}/{x}/{y}/image")
+    def patch_image(sid: str, x: int, y: int):
+        """The patch at training size, on the grid of its masks: what the wand tool reads. Lossless, so it sees the slide's own colours."""
+        check_cell(sid, x, y)
+        tile = open_slide(sid).read_region((x, y), 0, (PATCH_SIZE, PATCH_SIZE))
+        flat = Image.new("RGB", tile.size, "white")   # outside the scanned area a slide file is transparent
+        flat.paste(tile, mask=tile.getchannel("A"))
+        buf = io.BytesIO()
+        flat.resize((MASK_SIZE, MASK_SIZE), Image.BOX).save(buf, "png", compress_level=1)
+        return Response(buf.getvalue(), media_type="image/png", headers={"Cache-Control": "private, max-age=86400"})
 
     @router.post("/api/patches/{sid}/{x}/{y}")
     def save_patch(sid: str, x: int, y: int, body: PatchSave):
@@ -343,40 +390,48 @@ def build_router(man, open_slide, patient_label):
             s["visits"] += 1
             s["active_s"] = round(s["active_s"] + v["active_s"], 1)
             s["elapsed_s"] = round(s["elapsed_s"] + v["elapsed_s"], 1)
-        rows = []
-        for r in latest(SUMMARY, reviewer, ["complete", "partial"]):
+        rows, found = [], latest(SUMMARY, reviewer, ["complete", "partial"])
+        custom = _ordered({k for r in found for k in json.loads(r["fractions"]) if k not in LABEL_KEYS})
+        for r in found:
             f = json.loads(r["fractions"])
             stay = stays.get((r["owner"], r["slide_id"], r["x"], r["y"]), dict(pick_order="", visits=0, active_s="", elapsed_s=""))
-            rows.append(row(r, **stay, **{f"frac_{k}": f.get(k, 0) for k in LABEL_KEYS}))
-        cols = FIELDS + ["pick_order", "visits", "active_s", "elapsed_s"] + [f"frac_{k}" for k in LABEL_KEYS]
+            rows.append(row(r, **stay, **{f"frac_{k}": f.get(k, 0) for k in LABEL_KEYS + custom}))
+        cols = FIELDS + ["pick_order", "visits", "active_s", "elapsed_s"] + [f"frac_{k}" for k in LABEL_KEYS + custom]
         return Response(pd.DataFrame(rows, columns=cols).to_csv(index=False), media_type="text/csv",
                         headers={"Content-Disposition": "attachment; filename=hss_patches.csv"})
 
     @router.get("/api/export/patch_masks.zip")
     def export_masks(reviewer: Optional[str] = None, include_partial: bool = False):
         """Training masks. One 1-bit PNG of 512 x 512 per label per patch, 255 where the label applies. Regions may overlap, so these
-        are multi-label: one pixel can be set in several. Only complete patches unless include_partial=1. The image of a patch is
+        are multi-label: one pixel can be set in several. labels.json has the classes reviewers typed, with the file of each. Only
+        complete patches unless include_partial=1. The image of a patch is
         read_region((x, y), 0, (size_l0, size_l0)) on the slide, resized to mask_size, with the numbers in manifest.csv. The slide
         files have no level at 20x, so it has to be resized from level 0."""
         buf, rows = io.BytesIO(), latest(SUMMARY + ", regions", reviewer, ["complete", "partial"] if include_partial else ["complete"])
         table = io.StringIO()
         out = csv.DictWriter(table, FIELDS + ["mask_dir"], lineterminator="\n")
         out.writeheader()
+        typed = {}
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_STORED) as z:   # PNGs are compressed already
-            z.writestr("labels.json", json.dumps(dict(size_l0=PATCH_SIZE, mask_size=MASK_SIZE, magnification=MAGNIFICATION, labels=PATCH_LABELS), indent=1))
             for r in rows:
                 folder = f"masks/{re.sub(r'[^0-9A-Za-z._-]+', '_', r['owner'])}/{r['slide_id']}/x{r['x']}_y{r['y']}"
                 per = {}
                 for reg in json.loads(r["regions"]):
                     m = decode(reg["counts"], r["mask_size"])
                     for k in reg["labels"]:
-                        per[k] = per[k] | m if k in per else m
+                        name = mask_name(k)
+                        per[name] = per[name] | m if name in per else m
+                        if k not in LABEL_KEYS:
+                            typed.setdefault(name, k)
                 for k, m in per.items():
                     png = io.BytesIO()
                     Image.fromarray(m.astype(np.uint8) * 255).convert("1", dither=Image.NONE).save(png, "png")
                     z.writestr(f"{folder}/{k}.png", png.getvalue())
                 out.writerow(row(r, mask_dir=folder))
             z.writestr("manifest.csv", table.getvalue())
+            z.writestr("labels.json", json.dumps(dict(size_l0=PATCH_SIZE, mask_size=MASK_SIZE, magnification=MAGNIFICATION, labels=PATCH_LABELS,
+                                                      custom_labels=[dict(key=typed[f], name=typed[f][len(CUSTOM):], file=f) for f in sorted(typed)]),
+                                                 ensure_ascii=False, indent=1))
         return Response(buf.getvalue(), media_type="application/zip", headers=_attachment("complete_patches", "zip", reviewer))
 
     @router.get("/api/export/patches_audit.csv")

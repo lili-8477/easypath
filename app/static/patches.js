@@ -12,20 +12,27 @@ const TICK_MS = 15000, SEND_MS = 5000, SEND_MAX = 500, LOG_MAX = 20000, VIEW_MS 
 const SAVE_DELAY_MS = 500, RETRY_MS = 8000, UNDO_MAX = 40, LIST_MAX = 200;
 const PA_TOOLS = {
   move: { label: 'Move', key: 'V', icon: '<path d="M12 3l3 3h-2v5h5V9l3 3-3 3v-2h-5v5h2l-3 3-3-3h2v-5H6v2l-3-3 3-3v2h5V6H9z"/>' },
-  brush: { label: 'Brush', key: 'R', hint: 'Paint over the region, in as many strokes as it takes. [ and ] change the size.', icon: '<path d="M19 3l2 2-9 10-3-3zM8 13l3 3c-1 3-4 5-7 4 2-1 2-2 2-3 0-2 1-3 2-4z"/>' },
+  brush: { label: 'Brush', key: 'R', hint: 'Paint over the region, in as many strokes as it takes. Change the diameter with − and + under the tools, or [ and ].', icon: '<path d="M19 3l2 2-9 10-3-3zM8 13l3 3c-1 3-4 5-7 4 2-1 2-2 2-3 0-2 1-3 2-4z"/>' },
+  wand: { label: 'Wand', key: 'W', hint: 'Click: it spreads through similar colour nearby. Drag to take in more. Zoom out to reach further. Too much or too little? Change the sensitivity. Alt+drag removes.', icon: '<path d="M4 20L14 10l2 2L6 22z"/><path d="M17 2l1 3 3 1-3 1-1 3-1-3-3-1 3-1zM8 5l.6 1.4L10 7l-1.4.6L8 9l-.6-1.4L6 7l1.4-.6zM20 13l.6 1.4 1.4.6-1.4.6L20 17l-.6-1.4-1.4-.6 1.4-.6z"/>' },
   polygon: { label: 'Polygon', key: 'D', hint: 'Click around the region. Double-click, Enter or a click on the first point closes it. Backspace removes a point.', icon: '<path d="M6 5l13 3-3 11-11-3z" fill="none" stroke="currentColor" stroke-width="2"/>' },
   lasso: { label: 'Freehand', key: 'L', hint: 'Drag around the region. Releasing closes the shape.', icon: '<ellipse cx="12" cy="9.5" rx="8" ry="5.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 14c-2 2-1 5 2 5" fill="none" stroke="currentColor" stroke-width="2"/>' },
   eraser: { label: 'Erase', key: 'X', hint: 'Drag to remove. This erases every region under the brush. To erase from one only, click it in the list below first.', icon: '<path d="M14 4l6 6-9 10H7l-4-4zM9 9l6 6" fill="none" stroke="currentColor" stroke-width="2"/>' },
 };
 
+const PA_BRUSH_MIN = 4, PA_BRUSH_MAX = 256;
+const WAND_MIN = 5, WAND_MAX = 120, WAND_REACH_PX = 90, WAND_BLUR = 2, WAND_HOLE = 256;   // tolerance in RGB; reach on the screen, so zoom sets its size; blur and largest hole filled in mask pixels
+const PA_CUSTOM = 'custom:', PA_CUSTOM_MAX = 40;   // a class typed by the reviewer, as stored; the server keeps to the same form
+const PA_CUSTOM_COLORS = ['#e040fb', '#7c4dff', '#2962ff', '#c6ff00', '#00a152', '#c51162', '#006d77', '#827717', '#1a237e', '#880e4f', '#263238', '#00e5ff'];   // far from the fixed labels
 const Pa = {
   owner: reviewerInput.value.trim(),   // whose workspace is on screen
   size: 1024,     // the side of a patch on the slide, in level-0 pixels; grid and coordinates
   mask: 512, ds: 2, mag: '20×',   // the side of its masks, how many slide pixels one mask pixel covers, and what that makes it
   labels: [], loaded: false,
   bySlide: new Map(),   // slide id -> Map('x,y' -> summary)
-  tool: 'move', lastDraw: 'brush', brush: 64, space: false,
+  tool: 'move', lastDraw: 'brush', brush: 64, sizeShow: false, sizeTimer: null, space: false,
   cur: null,      // the open patch: { sid, x, y, loading, regions, comment, dirty, timer, covered, undo, redo }
+  wandTol: 30, wandImg: null,   // wandImg: the open patch's pixels, { key, rgb } or { key, loading }
+  customOpen: false, customText: '',   // typing a class of one's own
   draft: null,    // the region being drawn or changed: { mask, labels: Set, opened }. opened: it came from the list, and strokes add to it
   stroke: null,   // a brush or eraser stroke under way: { last, targets, value }
   drag: null,     // polygon or freehand points in slide pixels, while being drawn
@@ -44,6 +51,19 @@ const paLabel = (k) => Pa.labels.find((l) => l.key === k);
 const paLabelText = (k) => { const l = paLabel(k); return l ? l.short || l.name : k; };
 const paInOrder = (set) => Pa.labels.map((l) => l.key).filter((k) => set.has(k));
 const paKeyOf = (k) => PA_LABEL_KEYS[Pa.labels.findIndex((l) => l.key === k)];
+function paCustomName(s) {
+  const t = s.normalize('NFC').trim().split(/\s+/).join(' ').replace(/\p{C}/gu, '').replace(/;/g, ',');
+  return [...t].slice(0, PA_CUSTOM_MAX).join('').trim();
+}
+// The same name gets the same colour whenever it can, and no two classes on the list share one.
+function paAddCustom(key) {
+  if (!key.startsWith(PA_CUSTOM) || paLabel(key)) return;
+  const name = key.slice(PA_CUSTOM.length), used = new Set(Pa.labels.map((l) => l.color));
+  let h = 0;
+  for (const ch of name.toLowerCase()) h = (h * 31 + ch.codePointAt(0)) >>> 0;
+  const n = PA_CUSTOM_COLORS.length, free = Array.from({ length: n }, (_, i) => PA_CUSTOM_COLORS[(h + i) % n]).find((c) => !used.has(c));
+  Pa.labels.push({ key, name, short: name, group: 'Your own classes', color: free || PA_CUSTOM_COLORS[h % n], custom: true });
+}
 const paChips = (keys) => keys.map((k) => `<span class="rchip"><i style="background:${esc((paLabel(k) || {}).color || '#fff')}"></i>${esc(paLabelText(k))}</span>`).join('');
 const pctText = (f) => { const p = f * 100; return p >= 100 ? '100%' : p > 99 ? `${p.toFixed(1)}%` : p > 0 && p < 1 ? '<1%' : `${Math.floor(p)}%`; };
 const toGoText = (f) => { const p = (1 - f) * 100; return p < 1 ? '<1%' : `${Math.ceil(p)}%`; };   // rounded up: "covered" rounds down, and they should add up
@@ -228,7 +248,11 @@ async function patchLoad() {
   try {
     const d = await api(`api/patches?reviewer=${encodeURIComponent(owner)}`);
     if (owner !== Pa.owner) return;
-    Pa.size = d.size; Pa.mask = d.mask_size; Pa.ds = d.size / d.mask_size; Pa.mag = d.magnification; Pa.labels = d.labels; Pa.loaded = true;
+    Pa.size = d.size; Pa.mask = d.mask_size; Pa.ds = d.size / d.mask_size; Pa.mag = d.magnification;
+    const typed = Pa.labels.filter((l) => l.custom).map((l) => l.key);   // typed just now, perhaps not saved yet
+    Pa.labels = d.labels;
+    [...typed, ...d.custom].forEach(paAddCustom);
+    Pa.loaded = true;
     Pa.bySlide = new Map();
     d.patches.forEach(paStore);
     // saves still on their way are newer than what the server just listed
@@ -254,6 +278,7 @@ function patchSetOwner() {
   if (paOwnerKey(next) !== paOwnerKey(Pa.owner)) {
     paClose('initials changed');   // saved in the workspace it was drawn in
     Pa.bySlide = new Map(); Pa.loaded = false;
+    Pa.labels = Pa.labels.filter((l) => !l.custom);   // they belong to the workspace
   }
   Pa.owner = next;
   paRender();
@@ -335,6 +360,7 @@ function dropDrag() {
   Pa.drag = null;
 }
 function paClose(reason = 'closed') {   // whatever is labelled is kept; a region without a label is not annotated yet, so it goes, and says so
+  Pa.customOpen = false; Pa.customText = '';
   const c = Pa.cur;
   if (!c) return;
   dropDrag(); Pa.stroke = null;
@@ -394,11 +420,13 @@ async function paOpen(x, y, via = 'other') {   // via: how the reviewer got here
   }
   if (gen !== Pa.gen) return;
   const c = Pa.cur;
+  d.regions.forEach((r) => r.labels.forEach(paAddCustom));
   c.regions = d.regions.map((r) => newRegion(rleDecode(r.counts), r.labels));
   c.comment = d.comment || '';
   c.loading = false;
   c.last = JSON.stringify([serial(c.regions), c.comment.trim()]);
   paMeasure();
+  if (Pa.tool === 'wand') wandLoad();
   visitStart(via);
   paRender(); edDraw();
 }
@@ -455,6 +483,24 @@ function paLabelClick(key, shift) {
   paOp('label_rest', { key, area: Math.round((countOn(m) / paN()) * 1e4) / 1e4 });
   toast(`The remaining ${share} is now ${paLabelText(key)}. Z undoes this.`);
   paRender(); edDraw();
+}
+function paCustomShow(on) {
+  Pa.customOpen = on;
+  if (!on) Pa.customText = '';
+  paRender();
+  if (on) $('#paCustom').focus();
+}
+// What was typed works like a click on a label. A class already on the list is that class, whatever the case.
+function paCustomApply(shift) {
+  const name = paCustomName(Pa.customText), t = name.toLowerCase();
+  if (!name) { toast('Type the name of the class first', true); return; }
+  const same = Pa.labels.find((l) => [l.key, l.name, l.short].some((x) => x && x.toLowerCase() === t));
+  const key = same ? same.key : PA_CUSTOM + name;
+  paAddCustom(key);
+  Pa.customOpen = false; Pa.customText = '';
+  if (Pa.draft && Pa.draft.labels.has(key)) toast(`This region is already ${paLabelText(key)}`);
+  else paLabelClick(key, shift);
+  paRender();
 }
 function paSelectRest() {
   if (!Pa.cur || Pa.cur.loading) return;
@@ -531,24 +577,27 @@ function regionRow(r, i) {
 }
 function labelButtons() {
   const on = Pa.draft ? Pa.draft.labels : new Set(), c = Pa.cur, idle = !Pa.draft && (c.covered === 0 || c.covered === paN());
-  const btn = (l) => `<button type="button" class="roi-opt ${on.has(l.key) ? 'on' : ''}" data-palabel="${esc(l.key)}" aria-pressed="${on.has(l.key)}"><i style="background:${esc(l.color)}"></i><span>${esc(l.name)}</span><kbd>${paKeyOf(l.key).toUpperCase()}</kbd></button>`;
+  const btn = (l) => `<button type="button" class="roi-opt ${on.has(l.key) ? 'on' : ''}" data-palabel="${esc(l.key)}" aria-pressed="${on.has(l.key)}"><i style="background:${esc(l.color)}"></i><span>${esc(l.name)}</span>${paKeyOf(l.key) ? `<kbd>${paKeyOf(l.key).toUpperCase()}</kbd>` : ''}</button>`;
+  const own = Pa.customOpen
+    ? `<div class="pa-custom"><input id="paCustom" type="text" maxlength="${PA_CUSTOM_MAX}" autocomplete="off" placeholder="Type the class, then Enter" aria-label="Type your own class" value="${esc(Pa.customText)}"><button type="button" class="mini" id="paCustomGo">Apply</button></div>`
+    : '<button type="button" class="roi-opt pa-custom-btn" id="paCustomOpen"><i></i><span>Type your own…</span><kbd>T</kbd></button>';
   const groups = [...new Set(Pa.labels.map((l) => l.group).filter(Boolean))];
   return `<div class="roi-opts ${idle ? 'idle' : ''}">${Pa.labels.filter((l) => !l.group).map(btn).join('')}</div>` +
-    groups.map((g) => `<div class="rform-group">${esc(g)}</div><div class="roi-opts two ${idle ? 'idle' : ''}">${Pa.labels.filter((l) => l.group === g).map(btn).join('')}</div>`).join('');
+    groups.map((g) => `<div class="rform-group">${esc(g)}</div><div class="roi-opts two ${idle ? 'idle' : ''}">${Pa.labels.filter((l) => l.group === g).map(btn).join('')}</div>${g === 'Everything else' ? own : ''}`).join('');
 }
 function paRender() {
-  const p = $('#paPanel');
+  const p = $('#paPanel'), typing = document.activeElement && document.activeElement.id === 'paCustom';
   if (!modeIs('patches')) return;
   if (!S.sid) { p.className = 'spanel empty'; p.textContent = 'Select a slide.'; return; }
   if (!Pa.owner) { p.className = 'spanel empty'; p.textContent = 'Enter your initials at the top to open your own workspace. Only the patches under your initials are shown here.'; return; }
   p.className = 'spanel';
   const top = p.scrollTop, c = Pa.cur, t = PA_TOOLS[Pa.tool], um = S.info && S.info.mpp ? Pa.size * S.info.mpp : null;
-  const sized = Pa.tool === 'brush' || Pa.tool === 'eraser', d = Pa.draft && maskAny(Pa.draft.mask) ? Pa.draft : null;
+  const sized = Pa.tool === 'brush' || Pa.tool === 'eraser', wand = Pa.tool === 'wand', d = Pa.draft && maskAny(Pa.draft.mask) ? Pa.draft : null;
   let body;
   if (!c) {
     body = `<ol class="rintro">
         <li>Zoom in until the grid shows, then click a patch. ${Pa.mask} × ${Pa.mask} pixels at ${esc(Pa.mag)}${um ? `, ${Math.round(um)} µm across` : ''}.</li>
-        <li>Draw a region with <b>Brush</b> <kbd>R</kbd>, <b>Polygon</b> <kbd>D</kbd> or <b>Freehand</b> <kbd>L</kbd>.</li>
+        <li>Draw a region with <b>Brush</b> <kbd>R</kbd>, <b>Wand</b> <kbd>W</kbd>, <b>Polygon</b> <kbd>D</kbd> or <b>Freehand</b> <kbd>L</kbd>.</li>
         <li>Choose what it shows here.</li>
         <li>Go on until the whole patch is covered. Regions may overlap.</li></ol>
       <div class="small muted rworkspace">Your workspace: <b class="txt">${esc(Pa.owner)}</b>. Other reviewers don't see these patches here, and you don't see theirs. The order you pick patches in, your time on each and your steps are recorded.</div>`;
@@ -568,7 +617,8 @@ function paRender() {
       <div class="pa-meter-row"><span id="paMeterText"></span><button class="mini" id="paRest" title="Select everything not yet in a region, so it can be labelled (G)">${c.covered === 0 ? 'Select whole patch' : "Select what's left"} <kbd>G</kbd></button></div>
       <div id="paSaved" class="small muted"></div>
       ${Pa.tool === 'move' ? '' : `<div class="pa-hint">${esc(t.hint)}</div>`}
-      ${sized ? `<label class="pa-size">Size <input id="paSize" type="range" min="4" max="256" step="2" value="${Pa.brush}" aria-label="Brush size"> <span id="paSizeVal" class="tabnum"></span></label>` : ''}
+      ${wand ? `<label class="pa-size">Sensitivity <input id="paTol" type="range" min="${WAND_MIN}" max="${WAND_MAX}" step="1" value="${Pa.wandTol}" aria-label="Wand sensitivity"> <span id="paTolVal" class="tabnum"></span></label>` : ''}
+      ${sized ? `<label class="pa-size">Diameter <input id="paSize" type="range" min="${PA_BRUSH_MIN}" max="${PA_BRUSH_MAX}" step="2" value="${Pa.brush}" aria-label="Brush diameter"> <span id="paSizeVal" class="tabnum"></span></label>` : ''}
       <div class="rform-q ${askClass}">${esc(ask)}</div>
       ${labelButtons()}
       ${fresh ? '<div class="small muted pa-second">Shows two things? Shift+click adds a second label to the last region.</div>' : ''}
@@ -590,10 +640,20 @@ function paRender() {
   bind('#paZoom', 'click', () => { paZoom(); paOp('zoom_to_patch'); });
   bind('#paDone', 'click', () => patchFlush('closed'));
   bind('#paRest', 'click', paSelectRest);
-  bind('#paSize', 'input', (e) => { Pa.brush = +e.target.value; paSizeText(); edDraw(); });
+  bind('#paSize', 'input', (e) => paSetBrush(+e.target.value));
+  bind('#paTol', 'input', (e) => paSetTol(+e.target.value));
+  bind('#paCustomOpen', 'click', () => paCustomShow(true));
+  bind('#paCustomGo', 'click', (e) => paCustomApply(e.shiftKey));
+  bind('#paCustom', 'input', (e) => { Pa.customText = e.target.value; });
+  bind('#paCustom', 'keydown', (e) => {
+    if (e.isComposing || e.keyCode === 229) return;   // Enter here confirms the input method's text
+    if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); paCustomApply(e.shiftKey); }
+    if (e.key === 'Escape') { e.stopPropagation(); paCustomShow(false); }
+  });
+  if (typing && $('#paCustom')) $('#paCustom').focus();
   bind('#paHide', 'change', (e) => { Pa.hide = !e.target.checked; paOp('hide', { hidden: Pa.hide }); edDraw(); });
   bind('#paAlpha', 'input', (e) => { Pa.alpha = +e.target.value; edDraw(); });
-  ['#paSize', '#paAlpha', '#paHide'].forEach((s) => bind(s, 'change', (e) => e.target.blur()));   // or the shortcuts would go to the control
+  ['#paSize', '#paTol', '#paAlpha', '#paHide'].forEach((s) => bind(s, 'change', (e) => e.target.blur()));   // or the shortcuts would go to the control
   bind('#paComment', 'input', (e) => { if (Pa.cur) { Pa.cur.comment = e.target.value; paTouch(); } });
   bind('#paComment', 'change', (e) => paOp('comment', { length: e.target.value.trim().length }));
   paSizeText(); paList(); paMeter(); paSaveState(); paToolState();
@@ -601,7 +661,39 @@ function paRender() {
 function paSizeText() {
   const el = $('#paSizeVal');
   if (el) el.textContent = `${Pa.brush} px${S.info && S.info.mpp ? `, ${Math.round(Pa.brush * Pa.ds * S.info.mpp)} µm` : ''}`;
+  const wand = Pa.tool === 'wand', tv = $('#paTolVal');
+  if (tv) tv.textContent = Pa.wandTol;
+  $('#paDiaLab').textContent = wand ? 'Sensitivity' : 'Diameter';
+  $('#paDia').title = wand ? 'How different a colour the wand still takes in. Higher spreads further ([ and ])' : 'Diameter of the brush and the eraser, in pixels at 20× ([ and ])';
+  $('#paDiaVal').textContent = wand ? Pa.wandTol : `${Pa.brush} px`;
+  $('#paDiaDown').disabled = wand ? Pa.wandTol <= WAND_MIN : Pa.brush <= PA_BRUSH_MIN;
+  $('#paDiaUp').disabled = wand ? Pa.wandTol >= WAND_MAX : Pa.brush >= PA_BRUSH_MAX;
+  $('#paDiaDown').title = wand ? 'Less sensitive ([)' : 'Smaller ([)';
+  $('#paDiaUp').title = wand ? 'More sensitive (])' : 'Larger (])';
+  $('#paDiaDown').setAttribute('aria-label', wand ? 'Less sensitive' : 'Smaller brush');
+  $('#paDiaUp').setAttribute('aria-label', wand ? 'More sensitive' : 'Larger brush');
 }
+function paSetTol(v) {
+  Pa.wandTol = Math.max(WAND_MIN, Math.min(WAND_MAX, Math.round(v)));
+  const s = $('#paTol');
+  if (s) s.value = Pa.wandTol;
+  paSizeText();
+}
+// The one way the size changes. The ring shows on the patch for a moment, since the pointer is on a control and not on the slide.
+function paSetBrush(v) {
+  Pa.brush = Math.max(PA_BRUSH_MIN, Math.min(PA_BRUSH_MAX, Math.round(v / 2) * 2));
+  const s = $('#paSize');
+  if (s) s.value = Pa.brush;
+  paSizeText();
+  Pa.sizeShow = true;
+  clearTimeout(Pa.sizeTimer);
+  Pa.sizeTimer = setTimeout(() => { Pa.sizeShow = false; edDraw(); }, 1500);
+  edDraw();
+}
+const paBrushStep = (up) => {
+  if (Pa.tool !== 'wand') { paSetBrush(Pa.brush * (up ? 1.25 : 0.8)); return; }
+  paSetTol(up ? Math.max(Pa.wandTol + 1, Pa.wandTol * 1.25) : Math.min(Pa.wandTol - 1, Pa.wandTol * 0.8));
+};
 
 /* ------------------------------------------------------------ on the slide, called from paint() in editor.js */
 function layerCanvas(r) {
@@ -671,14 +763,132 @@ function patchPaint(m, W, H) {
       });
     }
   }
-  if ((Pa.tool === 'brush' || Pa.tool === 'eraser') && Pa.cursor && !Pa.space) {
-    const r = Math.max((Pa.brush / 2) * Pa.ds * m.s, 2), x = m.x(Pa.cursor), y = m.y(Pa.cursor);
+  const ringAt = (Pa.tool === 'brush' || Pa.tool === 'eraser') && Pa.cursor ? Pa.cursor
+    : Pa.sizeShow && Pa.cur ? [Pa.cur.x + Pa.size / 2, Pa.cur.y + Pa.size / 2] : null;
+  if (ringAt && !Pa.space) {
+    const r = Math.max((Pa.brush / 2) * Pa.ds * m.s, 2), x = m.x(ringAt), y = m.y(ringAt);
     edCtx.beginPath(); edCtx.arc(x, y, r, 0, 2 * Math.PI); edCtx.lineWidth = 1; edCtx.strokeStyle = '#000'; edCtx.stroke();
     edCtx.beginPath(); edCtx.arc(x, y, r + 1, 0, 2 * Math.PI); edCtx.strokeStyle = '#fff'; edCtx.stroke();
   }
 }
 
 /* ------------------------------------------------------------ pointer input. Captured on the way down, as in editor.js. */
+/* ------------------------------------------------------------ the wand: spreads from a point through similar colour, within a fixed reach on the screen */
+const wandKey = () => `${S.sid}/${Pa.cur.x}/${Pa.cur.y}`;
+function wandBlur(src, n) {   // a little blur on each channel, so one region isn't broken up by the grain of the tissue
+  const r = Math.ceil(WAND_BLUR * 2.5), w = [];
+  for (let i = -r; i <= r; i++) w.push(Math.exp(-(i * i) / (2 * WAND_BLUR * WAND_BLUR)));
+  const sum = w.reduce((a, b) => a + b, 0), kernel = w.map((v) => v / sum), out = new Float32Array(n * n * 3), tmp = new Float32Array(n * n * 3);
+  const pass = (from, to, step, across) => {
+    for (let c = 0; c < 3; c++) for (let a = 0; a < n; a++) for (let b = 0; b < n; b++) {
+      let v = 0;
+      for (let k = -r; k <= r; k++) { const j = Math.max(0, Math.min(n - 1, b + k)); v += kernel[k + r] * from[(a * across + j * step) * 3 + c]; }
+      to[(a * across + b * step) * 3 + c] = v;
+    }
+  };
+  pass(src, tmp, 1, n);
+  pass(tmp, out, n, 1);
+  return out;
+}
+async function wandLoad() {   // the pixels of the open patch, fetched once it has a use for them
+  if (!Pa.cur || Pa.cur.loading) return;
+  const key = wandKey();
+  if (Pa.wandImg && Pa.wandImg.key === key) return;
+  Pa.wandImg = { key, loading: true };
+  try {
+    const r = await fetch(`api/patches/${encodeURIComponent(S.sid)}/${Pa.cur.x}/${Pa.cur.y}/image`);
+    if (!r.ok) throw new Error(`the server answered ${r.status}`);
+    const bmp = await createImageBitmap(await r.blob(), { colorSpaceConversion: 'none', premultiplyAlpha: 'none' }), n = Pa.mask;
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = n;
+    const g = cv.getContext('2d', { willReadFrequently: true });
+    g.drawImage(bmp, 0, 0, n, n);
+    const px = g.getImageData(0, 0, n, n).data, rgb = new Float32Array(n * n * 3);
+    for (let i = 0; i < n * n; i++) { rgb[i * 3] = px[i * 4]; rgb[i * 3 + 1] = px[i * 4 + 1]; rgb[i * 3 + 2] = px[i * 4 + 2]; }
+    if (Pa.wandImg && Pa.wandImg.key === key) Pa.wandImg = { key, rgb: wandBlur(rgb, n) };
+  } catch (e) {
+    if (Pa.wandImg && Pa.wandImg.key === key) Pa.wandImg = null;   // the next click tries again
+    toast('Could not read the patch image: ' + errDetail(e), true);
+  }
+}
+const wandPixels = () => (Pa.wandImg && Pa.cur && Pa.wandImg.key === wandKey() && Pa.wandImg.rgb) || null;
+const wandReach = () => Math.max(4, WAND_REACH_PX / (Pa.ds * screenMap().s));   // in mask pixels
+function wandSeed(rgb, q) {   // the colour clicked on: a few pixels' mean, as one pixel can be a speck
+  const n = Pa.mask, cx = Math.floor(q[0]), cy = Math.floor(q[1]), v = [0, 0, 0];
+  let m = 0;
+  for (let y = Math.max(0, cy - 2); y <= Math.min(n - 1, cy + 2); y++) for (let x = Math.max(0, cx - 2); x <= Math.min(n - 1, cx + 2); x++) {
+    const i = (y * n + x) * 3;
+    v[0] += rgb[i]; v[1] += rgb[i + 1]; v[2] += rgb[i + 2]; m++;
+  }
+  return v.map((a) => a / m);
+}
+// Every pixel joined to the start through pixels close to the colour, inside the circle. Small holes are closed: a nucleus in a
+// stroma is not a region of its own. Sets `value` in the masks. False if the start itself isn't close to the colour.
+function wandFill(rgb, q, seed, tol, reach, masks, value) {
+  const n = Pa.mask, sx = Math.floor(q[0]), sy = Math.floor(q[1]), tol2 = tol * tol, r2 = reach * reach;
+  if (sx < 0 || sy < 0 || sx >= n || sy >= n) return false;
+  const close = (i) => { const a = rgb[i * 3] - seed[0], b = rgb[i * 3 + 1] - seed[1], c = rgb[i * 3 + 2] - seed[2]; return a * a + b * b + c * c <= tol2; };
+  const start = sy * n + sx;
+  if (!close(start)) return false;
+  const x0 = Math.max(0, Math.floor(q[0] - reach)), x1 = Math.min(n - 1, Math.ceil(q[0] + reach)), y0 = Math.max(0, Math.floor(q[1] - reach)), y1 = Math.min(n - 1, Math.ceil(q[1] + reach));
+  const w = x1 - x0 + 1, h = y1 - y0 + 1, at = (x, y) => (y - y0) * w + (x - x0);
+  const inside = (x, y) => { const a = x + 0.5 - q[0], b = y + 0.5 - q[1]; return a * a + b * b <= r2; };
+  const hit = new Uint8Array(w * h), stack = [start];   // 1 selected, 2 looked at from outside or from a hole
+  hit[at(sx, sy)] = 1;
+  while (stack.length) {
+    const i = stack.pop(), x = i % n, y = (i - x) / n;
+    for (const [u, v] of [[x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1]]) {
+      if (u < x0 || u > x1 || v < y0 || v > y1 || hit[at(u, v)] || !inside(u, v) || !close(v * n + u)) continue;
+      hit[at(u, v)] = 1;
+      stack.push(v * n + u);
+    }
+  }
+  for (let b = 0; b < h * w; b++) {   // the gaps, each as a whole: closed if small and nowhere near the edge of the search
+    if (hit[b]) continue;
+    const gap = [b];
+    let open = false;
+    hit[b] = 2;
+    for (let g = 0; g < gap.length; g++) {
+      const k = gap[g], x = k % w, y = (k - x) / w;
+      if (x === 0 || y === 0 || x === w - 1 || y === h - 1 || !inside(x + x0, y + y0)) open = true;
+      for (const [u, v] of [[x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1]]) {
+        if (u < 0 || v < 0 || u >= w || v >= h || hit[v * w + u]) continue;
+        hit[v * w + u] = 2;
+        gap.push(v * w + u);
+      }
+    }
+    if (!open && gap.length <= WAND_HOLE) gap.forEach((k) => { hit[k] = 1; });
+  }
+  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) if (hit[at(x, y)] === 1) masks.forEach((m) => { m[y * n + x] = value; });
+  return true;
+}
+function wandAlong(st, q) {   // a fast drag leaves no gaps
+  const rgb = wandPixels();
+  if (!rgb) return;
+  const d = Math.hypot(q[0] - st.last[0], q[1] - st.last[1]), reach = wandReach(), steps = Math.max(1, Math.ceil(d / Math.max(2, reach / 3)));
+  const masks = st.targets.map((t) => t.mask);
+  for (let i = 1; i <= steps; i++) wandFill(rgb, [st.last[0] + ((q[0] - st.last[0]) * i) / steps, st.last[1] + ((q[1] - st.last[1]) * i) / steps], st.seed, Pa.wandTol, reach, masks, st.value);
+  st.targets.forEach((t) => { t.stale = true; });
+}
+function wandPress(e, p) {
+  const q = patchPoint(p), n = Pa.mask;
+  if (q[0] < 0 || q[1] < 0 || q[0] >= n || q[1] >= n) { toast('Click inside the patch', true); return; }
+  const rgb = wandPixels();
+  if (!rgb) { wandLoad(); toast('Reading the patch image. Try again in a moment.'); return; }
+  pushUndo();
+  const erase = e.altKey;
+  let targets;
+  if (!erase) targets = [drawTarget()];
+  else {
+    if (Pa.draft && Pa.draft.labels.size && !Pa.draft.opened) commitDraft();
+    targets = Pa.draft ? [Pa.draft] : Pa.cur.regions;
+  }
+  const seed = wandSeed(rgb, q);
+  Pa.stroke = { wand: true, last: q, seed, targets, value: erase ? 0 : 1, at: Date.now(), path: 0 };
+  // the colour is a mean, so the pixel itself can be just outside a low tolerance: a click always takes what it was aimed at
+  wandFill(rgb, q, seed, Math.max(Pa.wandTol, Math.hypot(...[0, 1, 2].map((c) => rgb[(Math.floor(q[1]) * n + Math.floor(q[0])) * 3 + c] - seed[c])) + 0.01), wandReach(), targets.map((t) => t.mask), Pa.stroke.value);
+  targets.forEach((t) => { t.stale = true; });
+}
 const paDrawing = () => modeIs('patches') && Pa.tool !== 'move' && !Pa.space;
 function pickAt(e) {
   const m = screenMap(), p = imgPoint(e);
@@ -723,6 +933,7 @@ viewerEl.addEventListener('pointerdown', (e) => {
   const p = imgPoint(e);
   Pa.cursor = p;
   if (Pa.tool === 'polygon') polygonPoint(p);
+  else if (Pa.tool === 'wand') { if (wandPixels()) viewerEl.setPointerCapture(e.pointerId); wandPress(e, p); }
   else {
     viewerEl.setPointerCapture(e.pointerId);
     if (Pa.tool === 'lasso') Pa.drag = [p];
@@ -749,7 +960,8 @@ viewerEl.addEventListener('pointermove', (e) => {
   if (Pa.stroke) {
     if (!Pa.space) e.stopPropagation();
     const q = patchPoint(p), st = Pa.stroke;
-    st.targets.forEach((t) => { strokeTo(t.mask, st.last, q, Pa.brush / 2, st.value); t.stale = true; });
+    if (st.wand) wandAlong(st, q);
+    else st.targets.forEach((t) => { strokeTo(t.mask, st.last, q, Pa.brush / 2, st.value); t.stale = true; });
     st.path += Math.hypot(q[0] - st.last[0], q[1] - st.last[1]);
     st.last = q;
     edDraw();
@@ -802,7 +1014,8 @@ function endStroke() {
     if (Pa.draft && !maskAny(Pa.draft.mask)) Pa.draft = null;
   }
   paTouch();
-  paOp(st.value === 0 ? 'erase' : 'brush', { size: Pa.brush, path: Math.round(st.path), ms: Date.now() - st.at });
+  if (st.wand) paOp('wand', { sensitivity: Pa.wandTol, erase: st.value === 0, reach: Math.round(wandReach()), path: Math.round(st.path), ms: Date.now() - st.at });
+  else paOp(st.value === 0 ? 'erase' : 'brush', { size: Pa.brush, path: Math.round(st.path), ms: Date.now() - st.at });
   paRender(); edDraw();
 }
 viewerEl.addEventListener('pointercancel', () => {
@@ -828,8 +1041,9 @@ function setPaTool(t) {
   if (t !== 'move' && !patchWho()) return;
   if (t !== Pa.tool) { dropDrag(); if (Pa.loaded) paLog('tool', { tool: t }); }
   Pa.tool = t;
+  if (t === 'wand') wandLoad();
   if (t !== 'move') Pa.lastDraw = t === 'eraser' ? Pa.lastDraw : t;
-  if (modeIs('patches')) $('#viewerWrap').dataset.tool = t === 'move' ? 'nav' : 'roi';
+  if (modeIs('patches')) $('#viewerWrap').dataset.tool = t === 'move' ? 'nav' : t === 'wand' ? 'wand' : 'roi';
   delete $('#viewerWrap').dataset.hot;
   Pa.hoverCell = null;
   $('#patchToolsBody').querySelectorAll('[data-patool]').forEach((b) => {
@@ -842,6 +1056,12 @@ function setPaTool(t) {
 $('#patchToolsBody').innerHTML = Object.entries(PA_TOOLS).map(([id, t]) => `
     <button data-patool="${id}" title="${t.label} (${t.key})"><svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">${t.icon}</svg><span>${t.label}</span></button>`).join('') + `
     <div class="tool-sep"></div>
+    <div class="pa-dia" id="paDia">
+      <span id="paDiaLab">Diameter</span>
+      <div class="pa-dia-btns"><button id="paDiaDown" data-padia="down" title="Smaller ([)" aria-label="Smaller brush">−</button><button id="paDiaUp" data-padia="up" title="Larger (])" aria-label="Larger brush">+</button></div>
+      <span id="paDiaVal" class="tabnum" aria-live="polite"></span>
+    </div>
+    <div class="tool-sep"></div>
     <button id="paUndoBtn" title="Undo in this patch (Z)"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 5L4 9l4 4M4 9h10a5 5 0 010 10h-3"/></svg><span>Undo</span></button>
     <button id="paRedoBtn" title="Redo in this patch (Shift+Z)"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 5l4 4-4 4M20 9H10a5 5 0 000 10h3"/></svg><span>Redo</span></button>`;
 $('#patchToolsBody').addEventListener('click', (e) => {
@@ -849,6 +1069,7 @@ $('#patchToolsBody').addEventListener('click', (e) => {
   if (!b) return;
   b.blur();
   if (b.dataset.patool) setPaTool(b.dataset.patool);
+  else if (b.dataset.padia) paBrushStep(b.dataset.padia === 'up');
   else paUndoRedo(b.id === 'paUndoBtn' ? 'undo' : 'redo');
 });
 document.addEventListener('keydown', (e) => {
@@ -859,6 +1080,7 @@ document.addEventListener('keydown', (e) => {
 document.addEventListener('keyup', (e) => { if (e.key === ' ' && Pa.space) { Pa.space = false; delete $('#viewerWrap').dataset.pan; edDraw(); } });
 
 /* ------------------------------------------------------------ keys, called from the handler in app.js. True = key used. */
+paSizeText();
 const PA_ARROWS = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
 function patchKey(e, k) {
   if (k === ',' || k === '.' || k === '?' || k === ' ') return false;   // Space pans: its own listener above
@@ -882,14 +1104,13 @@ function patchKey(e, k) {
     return true;
   }
   if (k === 'z') { paUndoRedo(e.shiftKey ? 'redo' : 'undo'); return true; }
-  if (k === '[' || k === ']') {
-    Pa.brush = Math.max(4, Math.min(256, Math.round((Pa.brush * (k === ']' ? 1.25 : 0.8)) / 2) * 2));
-    const s = $('#paSize');
-    if (s) s.value = Pa.brush;
-    paSizeText(); edDraw();
+  // by the physical key too: under a Chinese input method these keys don't report [ and ]
+  if (k === '[' || k === ']' || e.code === 'BracketLeft' || e.code === 'BracketRight') {
+    paBrushStep(k === ']' || e.code === 'BracketRight');
     return true;
   }
   if (k === 'g') { paSelectRest(); return true; }
+  if (k === 't') { if (c && !c.loading) paCustomShow(true); return true; }
   if (k === 'h') {
     Pa.hide = !Pa.hide;
     const h = $('#paHide');
