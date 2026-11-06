@@ -4,7 +4,7 @@
    is up to the reviewer, so the order they are picked in, the time on each and every operation are logged. Loaded after rois.js. */
 'use strict';
 
-const PA_LABEL_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', 'b', 'u'];   // one for each label, in the order of the list
+const PA_LABEL_KEYS = ['1', '2', '3', '4', '5', '6', 'e', '7', '8', '9', '0', 'b', 'u'];   // one for each label, in the order of the list; E for Epithelioid, so the keys already learned stay
 const GRID_MIN_PX = 10, ZOOM_TO_PX = 48;   // on screen: the smallest cell worth drawing, and how large a click on the bare slide makes it
 const PICK_PAD_PX = 16;                    // around a picked patch, for drawing past its edge
 const IDLE_MS = 120000, CLOCK_MS = 1000, MAX_STEP_MS = 5000;   // no input for this long is not active time; a longer gap between clock ticks is a sleeping computer
@@ -54,6 +54,12 @@ const paKeyOf = (k) => PA_LABEL_KEYS[Pa.labels.findIndex((l) => l.key === k)];
 function paCustomName(s) {
   const t = s.normalize('NFC').trim().split(/\s+/).join(' ').replace(/\p{C}/gu, '').replace(/;/g, ',');
   return [...t].slice(0, PA_CUSTOM_MAX).join('').trim();
+}
+// A class typed under a name that is now on the list is that class. The server reads saved work the same way for the lists and exports.
+function paListed(key) {
+  if (!key.startsWith(PA_CUSTOM)) return key;
+  const t = key.slice(PA_CUSTOM.length).toLowerCase(), same = Pa.labels.find((l) => !l.custom && [l.key, l.name, l.short].some((x) => x && x.toLowerCase() === t));
+  return same ? same.key : key;
 }
 // The same name gets the same colour whenever it can, and no two classes on the list share one.
 function paAddCustom(key) {
@@ -150,7 +156,9 @@ function drawTarget() {   // where the next stroke goes: a draft still waiting f
   if (!Pa.draft) Pa.draft = newRegion(new Uint8Array(paN()), [], false);
   return Pa.draft;
 }
-function serial(regions) { return regions.map((r) => ({ labels: paInOrder(r.labels), counts: rleEncode(r.mask) })); }
+function serial(regions) {   // labels this page doesn't know, added since it was opened, are kept: a save must not lose them
+  return regions.map((r) => ({ labels: [...paInOrder(r.labels), ...[...r.labels].filter((k) => !paLabel(k))], counts: rleEncode(r.mask) }));
+}
 
 /* Undo holds the state before each change, run-length encoded: a patch is small that way, and it is a single case to restore. */
 function snapshot() {
@@ -420,7 +428,7 @@ async function paOpen(x, y, via = 'other') {   // via: how the reviewer got here
   }
   if (gen !== Pa.gen) return;
   const c = Pa.cur;
-  d.regions.forEach((r) => r.labels.forEach(paAddCustom));
+  d.regions.forEach((r) => { r.labels = r.labels.map(paListed); r.labels.forEach(paAddCustom); });
   c.regions = d.regions.map((r) => newRegion(rleDecode(r.counts), r.labels));
   c.comment = d.comment || '';
   c.loading = false;

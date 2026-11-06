@@ -62,6 +62,7 @@ LABEL_KEYS = [d["key"] for d in PATCH_LABELS]
 CUSTOM = "custom:"
 MAX_CUSTOM = 40          # characters in a class typed by a reviewer
 MAX_REGION_LABELS = 16
+LISTED = {str(d[f]).casefold(): d["key"] for d in PATCH_LABELS for f in ("key", "name", "short") if f in d}   # a class by any of its names
 FIELDS = ["reviewer", "slide_id", "patient", "cohort", "x", "y", "size_l0", "mask_size", "downsample", "mpp_l0", "mpp_patch", "status",
           "coverage", "labels", "comment", "ts"]
 MAX_EVENTS = 1000
@@ -143,6 +144,11 @@ def custom_key(label):
     return CUSTOM + text if text else None
 
 
+def _listed(key):
+    """A class typed under a name on the list is that class: otherwise one class would be two in the training data."""
+    return LISTED.get(key[len(CUSTOM):].casefold(), key) if key.startswith(CUSTOM) else key
+
+
 def _label(label):
     return label if label in LABEL_KEYS else custom_key(label) if label.startswith(CUSTOM) else None
 
@@ -158,6 +164,11 @@ def mask_name(key):
     text = key[len(CUSTOM):].casefold()
     slug = re.sub(r"[^0-9a-z]+", "_", text).strip("_")[:24]
     return "_".join(filter(None, ["custom", slug, hashlib.sha1(text.encode()).hexdigest()[:8]]))
+
+
+def _as_listed(regions):
+    """Saved regions as they read today. What was saved stays as it was: patch_events only grows."""
+    return [dict(r, labels=_ordered({_listed(k) for k in r["labels"]})) for r in regions]
 
 
 def _clean(regions):
@@ -214,8 +225,16 @@ def build_router(man, open_slide, patient_label):
         where += " AND status IN (%s)" % ",".join("?" * len(status))
         args += status
         con = connect()
-        rows = con.execute(LATEST.format(cols=cols, where=where), args).fetchall()
+        rows = [dict(r) for r in con.execute(LATEST.format(cols=cols, where=where), args).fetchall()]
         con.close()
+        for r in rows:
+            if CUSTOM in r["fractions"]:
+                shares = {}
+                for k, v in json.loads(r["fractions"]).items():
+                    shares[_listed(k)] = max(v, shares.get(_listed(k), 0))
+                r["fractions"] = json.dumps({k: shares[k] for k in _ordered(shares)})
+                if "regions" in r:
+                    r["regions"] = json.dumps(_as_listed(json.loads(r["regions"])), separators=(",", ":"))
         return rows
 
     def check_cell(sid, x, y):
@@ -240,6 +259,7 @@ def build_router(man, open_slide, patient_label):
         r = con.execute("""SELECT regions, comment FROM patch_events WHERE slide_id = ? AND x = ? AND y = ? AND size = ? AND owner = ?
                            ORDER BY id DESC LIMIT 1""", (sid, x, y, PATCH_SIZE, _owner(reviewer))).fetchone() if reviewer.strip() else None
         con.close()
+        # As saved: the page makes a typed name the listed class itself, because a page opened before the class was added cannot show or save it.
         return dict(regions=json.loads(r["regions"]) if r else [], comment=(r["comment"] or "") if r else "")
 
     @router.get("/api/patches/{sid}/{x}/{y}/image")

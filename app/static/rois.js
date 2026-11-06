@@ -3,7 +3,7 @@
    without a segmentation, and does not depend on the segmentation run. Loaded after editor.js. */
 'use strict';
 
-const ROI_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'];   // one for each label, in the order of the list
+const ROI_KEYS = ['1', '2', '3', '4', '5', '6', 'e', '7', '8', '9', '0'];   // one for each label, in the order of the list; E for Epithelioid, so the keys already learned stay
 const MIN_SIDE = 32, MIN_DRAG_PX = 8;   // level-0 pixels (as on the server) and screen pixels
 const OVAL_POINTS = 72;
 const ROI_TOOLS = {

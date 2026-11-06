@@ -27,7 +27,8 @@ ROI_LABELS = [
     dict(key="poorly_differentiated", name="Poorly differentiated (round cells)", short="Poorly differentiated", color="#ff6b9d"),
     dict(key="myxoid", name="Myxoid", color="#b79cff"),
     dict(key="osteoid", name="Osteoid (bone forming)", short="Osteoid", color="#ff9f45"),
-    dict(key="collagenous", name="Collagenous", color="#7ee081"),
+    dict(key="collagenous", name="Collagenous spindle", color="#7ee081"),   # the key is what saved work and the exports use: it stays when the name changes
+    dict(key="epithelioid", name="Epithelioid", color="#b5d334"),
     dict(key="normal_vessel", name="Vessels", short="Normal: vessels", group=NORMAL, color="#e8edf2"),
     dict(key="normal_muscle", name="Muscle", short="Normal: muscle", group=NORMAL, color="#e8edf2"),
     dict(key="normal_nerve", name="Nerve", short="Normal: nerve", group=NORMAL, color="#e8edf2"),
